@@ -1,0 +1,56 @@
+# platform-probe
+
+> A small, dependency-free Go status page for the Meddleware platform. It probes
+> internal health endpoints server-side on a timer, caches an aggregated,
+> capability-grouped snapshot, and serves it to browsers, which only ever read the
+> cache. The snapshot is topology-free (no internal URLs/hostnames). Runs on
+> `scratch` as non-root UID 65534.
+
+## Purpose
+
+- Show end-to-end health of user-facing capabilities, grouped (Identity & Access,
+  Container Registry, …), not a flat list of hostnames.
+- Probe server-side and cache the result so clients read a cheap snapshot and probe
+  load is independent of visitor count.
+- Assert real conditions (status code / body), so status reflects health, not mere
+  reachability.
+
+## Endpoints
+
+- `GET /` — the embedded status page.
+- `GET /api/status` — cached JSON snapshot: {generated_at, overall, groups[]}.
+- `GET /healthz` — 200 liveness (independent of probed dependencies).
+- CLI: `-healthcheck` dials /healthz and exits 0/1 (container HEALTHCHECK).
+
+## Configuration (environment variables)
+
+- `PORT` (default 8080)
+- `PROBE_INTERVAL` (default 15s) — cycle period + snapshot freshness
+- `PROBE_TIMEOUT` (default 5s) — per-probe timeout; must be < PROBE_INTERVAL
+- `LOG_LEVEL` (default info)
+
+## Behaviour
+
+- Prober goroutine probes all checks concurrently each cycle; component = condition
+  met ? operational : down. Rollup: all operational → operational, all down → down,
+  mixed → degraded (components → group, groups → overall).
+- Checks are defined in code (internal/checks/checks.go); URLs never reach clients.
+- The "Registry API" check hits the auth-proxy catalog endpoint, so a 200 proves the
+  whole registry auth chain.
+
+## Security invariants
+
+- Topology-free API: no URLs, hostnames, ports, or error text in any response.
+- Server-side + cached: clients never trigger a probe.
+- Fail safe to down on any probe error/timeout/mismatch; never panic.
+
+## Supply chain
+
+- Multi-arch images (amd64/arm64) on quay.io + Docker Hub.
+- SBOM (SPDX) + SLSA provenance attached; keyless cosign signatures over the digest.
+- Base image pinned by digest; reproducible build; standard library only (no deps).
+
+## Links
+
+- Source: https://github.com/meddleware-org/platform-probe
+- Security policy: SECURITY.md

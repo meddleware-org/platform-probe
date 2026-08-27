@@ -1,0 +1,23 @@
+# Build output
+/out/
+/platform-probe
+/dist/
+
+# Test binaries (go test -c) and coverage
+*.test
+coverage.out
+*.prof
+
+# Delve debugger output
+__debug_bin*
+
+# Editor / OS cruft
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# Environment variables
+.env*
+!.env*.example
