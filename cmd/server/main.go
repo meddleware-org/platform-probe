@@ -76,7 +76,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
-	mux.HandleFunc("GET /api/status", handleStatus(prober))
+	mux.HandleFunc("GET /api/status", withCORS(handleStatus(prober)))
+	mux.HandleFunc("OPTIONS /api/status", withCORS(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Port),
@@ -124,6 +127,18 @@ func healthCheck() int {
 		return 1
 	}
 	return 0
+}
+
+// withCORS wraps a handler to allow cross-origin reads of the public /api/status
+// endpoint. The endpoint is read-only and contains no sensitive data, so a
+// wildcard origin is appropriate.
+func withCORS(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
+		next(w, r)
+	}
 }
 
 // handleHealth responds 200 to liveness/readiness probes. It reflects the
