@@ -89,7 +89,13 @@ func NewProber(configPath string, timeout time.Duration) *Prober {
 		configPath: configPath,
 		timeout:    timeout,
 		// No global client timeout; each probe uses a per-request context deadline.
-		client: &http.Client{},
+		// CheckRedirect: stop following 3xx (internal health endpoints never redirect;
+		// an unexpected redirect fails the ExpectStatus check, which is fail-closed).
+		client: &http.Client{
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 	if loaded, err := LoadFile(configPath); err != nil {
 		slog.Warn("initial checks config load failed; serving empty status until it is valid", "err", err)

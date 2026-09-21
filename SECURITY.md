@@ -23,7 +23,7 @@ following is in scope and treated as high severity:
 1. **No topology disclosure.** `GET /api/status` (and the page) must expose only
    capability groups, component names, and coarse statuses. Internal probe URLs,
    hostnames, ports, tech-stack fingerprints, and error text must never appear in
-   any response. Probe targets exist only in the compiled binary.
+   any response. Probe targets exist only in the mounted runtime Secret (`CHECKS_CONFIG_FILE`) — they are never compiled into the binary or image.
 2. **Server-side, cached probing.** Clients cannot trigger a probe; they read a
    cached snapshot. Probe traffic to internal services is fixed at one cycle per
    `PROBE_INTERVAL` and cannot be amplified by request volume.
