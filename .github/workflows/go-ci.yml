@@ -1,4 +1,4 @@
-name: CI
+name: Go CI
 
 # Continuous integration gate for platform-probe. Runs on every push and PR.
 # The publish workflow fires only on version tags; keeping this green before
