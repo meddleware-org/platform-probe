@@ -127,7 +127,7 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          image: quay.io/${{ vars.QUAY_NAMESPACE }}/${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          image: quay.io/${{ vars.QUAY_NAMESPACE || 'meddleware-org' }}/${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
           format: spdx-json
           output-file: sbom.spdx.json
           upload-artifact: false
@@ -135,8 +135,8 @@ jobs:
       - name: Attest SBOM (keyless)
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-          QUAY_NS: ${{ vars.QUAY_NAMESPACE }}
-          DOCKERHUB_NS: ${{ vars.DOCKERHUB_NAMESPACE }}
+          QUAY_NS: ${{ vars.QUAY_NAMESPACE || 'meddleware-org' }}
+          DOCKERHUB_NS: ${{ vars.DOCKERHUB_NAMESPACE || 'meddleware' }}
         run: |
           cosign attest --yes --type spdxjson --predicate sbom.spdx.json "quay.io/${QUAY_NS}/${IMAGE}@${DIGEST}"
           cosign attest --yes --type spdxjson --predicate sbom.spdx.json "docker.io/${DOCKERHUB_NS}/${IMAGE}@${DIGEST}"
