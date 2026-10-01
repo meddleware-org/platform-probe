@@ -74,16 +74,9 @@ func main() {
 	defer stopProber()
 	go prober.Start(proberCtx, cfg.ProbeInterval)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealth)
-	mux.HandleFunc("GET /api/status", withCORS(handleStatus(prober)))
-	mux.HandleFunc("OPTIONS /api/status", withCORS(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
 	srv := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Port),
-		Handler:           logRequest(mux),
+		Handler:           logRequest(newHandler(handleStatus(prober))),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
@@ -127,6 +120,33 @@ func healthCheck() int {
 		return 1
 	}
 	return 0
+}
+
+// newHandler routes the public endpoints and applies the security headers to every response,
+// including 404s and 405s from the mux.
+func newHandler(status http.HandlerFunc) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", handleHealth)
+	mux.HandleFunc("GET /api/status", withCORS(status))
+	mux.HandleFunc("OPTIONS /api/status", withCORS(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	return withSecurityHeaders(mux)
+}
+
+// withSecurityHeaders sets headers for a JSON-only API: no content may load or render from these
+// responses, they cannot be framed or MIME-sniffed, and no referrer leaks. Cross-origin reads stay
+// allowed (CORP cross-origin), since the status widget on other hosts polls /api/status.
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Cross-Origin-Resource-Policy", "cross-origin")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // withCORS wraps a handler to allow cross-origin reads of the public /api/status

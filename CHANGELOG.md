@@ -5,6 +5,15 @@ All notable changes to platform-probe are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-10-01
+
+### Security
+
+- Every response carries headers for a JSON-only API: `Content-Security-Policy: default-src 'none';
+  frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: cross-origin` (cross-origin reads of
+  `/api/status` stay allowed). This includes 404 and 405 responses.
+
 ## [0.1.1] - 2026-09-05
 
 ### Fixed
