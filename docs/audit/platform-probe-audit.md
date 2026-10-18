@@ -5,7 +5,7 @@
 **Project type:** Go service + image
 **Template:** AUDIT_TEMPLATE.md (2026-10-08) + AUDIT_TEMPLATE_GO.md (2026-10-08) + AUDIT_TEMPLATE_IMG.md (2026-10-08)
 Not triggered: AUTH (no token or credential is issued, verified or held; the mounted Secret holds probe targets, not credentials), PLATFORM (the Secret's custody and the cluster are audited with the workspace), PROXY (it forwards nothing), SUI_CLIENT and the chain lenses (no chain access).
-**Go:** `go 1.26.6`, `toolchain go1.26.9` in `go.mod`; CI uses `go-version-file: go.mod`; the Dockerfile builder `golang:1.26.9-bookworm@sha256:d9c68c2c…453c` is checked against the `toolchain` line at build time
+**Go:** `go 1.26.6`, `toolchain go1.26.9` in `go.mod` (unchanged at 0.1.7); CI uses `go-version-file: go.mod`; the Dockerfile builder `golang:1.26.9-bookworm@sha256:d9c68c2c…453c` is checked against the `toolchain` line at build time
 **Modules:** none (standard library only; no `go.sum`)
 **Entry points:** `cmd/server` (one binary, listens on `:8080`, `-healthcheck` mode for the container `HEALTHCHECK`); routes `GET /api/status`, `OPTIONS /api/status`, `GET /healthz`
 **Upstreams:** the internal health endpoints named in the mounted checks file (plain GET, no authentication, no credentials sent); none are named in the repository or the image
@@ -15,10 +15,10 @@ Not triggered: AUTH (no token or credential is issued, verified or held; the mou
 **Deployed by:** `k8s/base/apps/status/deployment.yaml` (namespace `apps`), overlay `k8s/clusters/meddleware-org/apps`; digest from `config/images.yaml`; probe targets from the SOPS-managed Secret `status-checks` (`status-checks-secret.enc.yaml`)
 **Build args:** `VERSION` (link-time version), `TARGETOS`, `TARGETARCH`, and the image-label strings `VENDOR`, `DESCRIPTION`, `SOURCE_URL`, `DOCUMENTATION_URL`, `IMAGE_URL` — none secret
 **Deployment status:** image `quay.io/meddleware-org/platform-probe` at 0.1.6 (`sha256:c85c5485…`, deployed 2026-10-09) in `k8s/base/apps/status` (namespace `apps`); live `https://status.meddleware.co.uk/api/status` returns the topology-free snapshot (three groups including *Chain Access → Chain index*) with the security headers
-**Review date:** 2026-09-18 (first pass) · re-verified 2026-10-03 · re-verified 2026-10-09
+**Review date:** 2026-09-18 (first pass) · re-verified 2026-10-03 · re-verified 2026-10-09 · fix wave 2026-10-18 (0.1.7, commit pending)
 **Reviewer:** Internal review
 **Severity ceiling:** Low — public but topology-free: it probes internal endpoints on a timer and serves only names and coarse statuses.
-**Status:** re-verified 2026-10-09
+**Status:** fix wave 2026-10-18 (0.1.7, unreleased; the deployed image is 0.1.6)
 
 ---
 
@@ -48,16 +48,23 @@ Re-verified 2026-10-09 (0.1.6; `go vet` and `go test -race` green, coverage chec
   govulncheck, filesystem scan) and the published image is scanned before cosign signs it. The known web-repo
   gap (the reusable CI workflow lacking the unit tests) is **not present here**: `go-ci.yml` runs
   `go test -race`, and the release `verify` job calls it.
-- Defects found by this pass that are **not yet fixed** (code changes are outside this alignment; each is a
-  small change for the next patch release): **F10 (Low, DEFERRED)** a component without `expect_status`
-  reads `operational` for any HTTP response, including a 5xx; **F11 (Info, DEFERRED)** stale statements about
-  where the probe targets live (a package comment, `llms.txt`, the README); **F14 (Info, DEFERRED)** coverage
-  gaps (the redirect policy and the status handler are untested).
-- Accepted or maintainer items: **F12** the README's cosign command pins the repository, not the workflow
-  (ACCEPTED-RISK); **F13** the registry mirror and credential inventory (DEFERRED, maintainer).
+- Defects found by this pass: **F10 (Low)**, **F11 (Info)** and **F14 (Info)** were DEFERRED to the next patch and are
+  RESOLVED in 0.1.7 (2026-10-18, commit pending): a component without `expect_status` is now `operational` only
+  for a 2xx (it read `operational` for any HTTP response, including a 5xx); the stale statements about where the
+  probe targets live are corrected; the redirect refusal and the status handler are tested.
+- Accepted or maintainer items: **F12** the README's cosign command pinned the repository, not the workflow
+  (MITIGATED 0.1.7: the README now pins `docker-publish.yml@refs/tags/v*`; the workspace's `verify-digests.sh`
+  still uses the repository-wide identity); **F13** the registry mirror and credential inventory (DEFERRED, maintainer).
 
-The severity ceiling stays Low. The live Secret is SOPS-encrypted and was not decrypted: that every live
-component sets `expect_status` (F10) is not verified here.
+Fix wave 2026-10-18 (0.1.7: `go vet`, `go test -race` green, coverage checks 93.0%, config 100%, `cmd/server`
+33.8%; golangci-lint v2.13.0 and govulncheck v1.8.0 clean on the pinned 1.26.9 toolchain; image built with
+rootless podman and smoke-tested).
+
+The severity ceiling stays Low. The live Secret is SOPS-encrypted and was not decrypted. The committed bootstrap
+definitions (`bootstrap/profiles/single-node.sh`, `recover-secrets.sh`) and `OPERATOR_TASKS.md` give every one of the
+five live components `expect_status: 200`, and the live snapshot read all `operational` on 2026-10-18, so the
+2xx default of F10 should change nothing on the page; if the Secret differs and a component omits `expect_status`
+while answering a non-2xx, it will read `down` after the 0.1.7 rollout and the maintainer should add the explicit code.
 
 ## Threat model / trust boundaries
 
@@ -66,7 +73,7 @@ component sets `expect_status` (F10) is not verified here.
 | Anonymous client | requests | read the snapshot; CORS `*` | names and statuses only (I1); cached (I2); GET/OPTIONS only (I7) |
 | Anonymous client (volume) | requests | try to amplify probes | probes run on the ticker only |
 | Image or repo reader | the image | look for targets | targets live only in the mounted Secret |
-| Config editor (maintainer) | the Secret | break the config; point probes at any URL; omit `expect_status` | last good config kept; failures read `down`; an omitted `expect_status` is lenient (F10); access is SOPS custody (workspace) |
+| Config editor (maintainer) | the Secret | break the config; point probes at any URL; omit `expect_status` | last good config kept; failures read `down`; an omitted `expect_status` accepts only a 2xx and one outside 100..599 is rejected (F10); access is SOPS custody (workspace) |
 | Probed service | its response | answer slowly, with a redirect, with a huge body | per-probe timeout, redirects not followed, 64 KiB body cap (I5) |
 | Go toolchain, base image, CI publish job | the compiled code and the signed image | ship altered bytes | digest-pinned builder checked against the `go.mod` toolchain, pinned `govulncheck`, Trivy before cosign, keyless signature (F8, F9) |
 
@@ -76,8 +83,8 @@ Critical / High / Medium / Low / Info / Positive.
 
 ## Scope
 
-- **In scope (0.1.6):** `cmd/server/**`, `internal/checks/**`, `internal/config/**`, tests, `Dockerfile`,
-  `.dockerignore`, workflows, `.github/dependabot.yml`, `SECURITY.md`, `README.md`, `llms.txt`,
+- **In scope (0.1.7):** `cmd/server/**`, `internal/checks/**`, `internal/config/**`, tests, `Dockerfile`,
+  `.dockerignore`, workflows, `.github/dependabot.yml`, `SECURITY.md`, `README.md`, `llms.txt`, `AGENTS.md`, `CLAUDE.md`,
   `k8s/base/apps/status/deployment.yaml` and `networkpolicy.yaml` (read-only).
 - **Out of scope:** the probed services; Secret custody (SOPS, `SECRETS.md`).
 - **Environment (2026-10-09):** `go vet`; `go test -race -cover` (checks 92.5%, config 100%, `cmd/server`
@@ -103,8 +110,10 @@ logs and `os.Exit(1)` (`cmd/server/main.go`).
 
 **Severity:** Low   **Disposition:** RESOLVED — `CheckRedirect` returns the 3xx, which fails the
 expected-200 check.
-**Remediation / evidence (2026-10-09):** `NewProber` sets `CheckRedirect` to `http.ErrUseLastResponse`. No
-test pins it: `TestProbe` builds the `Prober` with a plain `http.Client` (F14).
+**Remediation / evidence (2026-10-18):** `NewProber` sets `CheckRedirect` to `http.ErrUseLastResponse`. Pinned
+since 0.1.7 by `TestProbeRefusesRedirects`, which probes through `NewProber`'s client: a 302 reads `down` with and
+without `expect_status`, the redirect target is never requested, and an explicit `expect_status: 302` is
+`operational` (F14). A check without `expect_status` also reads `down` for a 3xx (F10).
 
 ### F4 — Response bodies bounded
 
@@ -169,47 +178,61 @@ modules, no bundled npm code).
 
 ### F10 — A component without `expect_status` reads operational for any response
 
-**Severity:** Low   **Disposition:** DEFERRED (next patch release; Section D pre-testnet "any failure reads `down`")
-**Where:** `internal/checks/checks.go` (`probe`: `if c.ExpectStatus != 0 && …`), `internal/checks/config.go`
-(`LoadFile` validates name and URL only)
-**Issue:** `expect_status` is optional in the JSON and defaults to `0`, which skips the status comparison.
-A component that omits it reads `operational` for any HTTP answer, including `500` and `503`, as long as
-the connection succeeds (and, when `expect_body_contains` is also omitted, regardless of the body). The
-README and `config.example.json` always show `expect_status`, and the tests that load files do so with it,
-but nothing rejects an entry without it. This contradicts the invariants in `SECURITY.md` (3, "probe errors
-never render as operational") and `CLAUDE.md` (5, "health, not reachability").
-**Impact:** a typo or omission in the Secret turns a health probe into a reachability probe on the public
-status page, and an outage could show green. The maintainer edits the Secret, so this is a footgun, not an
-attack. Whether any live component omits it was not checked (the Secret is encrypted).
-**Remediation / evidence:** make `LoadFile` reject (or default to `200`) an `expect_status` outside
-100..599, and add a test (`TestLoadFileErrors`, `TestProbe`).
+**Severity:** Low   **Disposition:** RESOLVED (0.1.7, commit pending; Section D pre-testnet "any failure reads `down`")
+**Where:** `internal/checks/checks.go` (`probe`, `statusAccepted`), `internal/checks/config.go` (`LoadFile`)
+**Issue:** `expect_status` is optional in the JSON and defaults to `0`, which skipped the status comparison.
+A component that omitted it read `operational` for any HTTP answer, including `500` and `503`, as long as
+the connection succeeded (and, when `expect_body_contains` was also omitted, regardless of the body). The
+README and `config.example.json` always show `expect_status`, but nothing rejected an entry without it. This
+contradicted the invariants in `SECURITY.md` (3, "probe errors never render as operational") and `CLAUDE.md` (5).
+**Impact:** a typo or omission in the Secret turned a health probe into a reachability probe on the public
+status page, and an outage could show green. The maintainer edits the Secret, so this was a footgun, not an attack.
+**Remediation / evidence:** the one default that keeps existing configs working and fails closed: with no
+`expect_status` (`0`) only a 2xx is `operational` (`statusAccepted`); a 3xx (redirects are not followed, F3), 4xx
+or 5xx reads `down`; an explicit `expect_status` stays an exact match. `LoadFile` rejects an `expect_status`
+outside 100..599, keeping the last good config. Pinned by `TestProbeWithoutExpectStatusAcceptsOnly2xx` (200, 204,
+299 operational; 301, 302, 400, 401, 404, 500, 503 down), `TestProbeExplicitExpectStatusIsExact`,
+`TestLoadFileErrors` (99, 600, -1) and `TestLoadFileExpectStatus`; end to end in
+`TestHandleStatusServesTheCachedSnapshot` (a 503 without `expect_status` reads `down`) and the 2026-10-18 image smoke
+test. Rollout check: the live Secret is SOPS-encrypted and was not read; the committed bootstrap definitions
+(`single-node.sh`, `recover-secrets.sh`) and `OPERATOR_TASKS.md` give all five live components
+(Sign-in, Authorization, Registry API, Registry UI, Chain index) `expect_status: 200`, and the live page read
+all `operational` on 2026-10-18, so no component is expected to change. A stricter rule (reject an entry without
+`expect_status`) was not chosen: it would fail the whole reload, and at start-up leave the page empty, for one
+omitted field. After the 0.1.7 rollout confirm the page is unchanged; a component that now reads `down` omits
+`expect_status` and answers a non-2xx, and needs the explicit code added to the Secret.
 
 ### F11 — Stale statements about where the probe targets live
 
-**Severity:** Info   **Disposition:** DEFERRED (next patch release; documentation)
-**Where:** `internal/checks/checks.go:5` (package comment: "The internal probe URLs live here in code"),
+**Severity:** Info   **Disposition:** RESOLVED (0.1.7, commit pending; documentation)
+**Where:** `internal/checks/checks.go` (package comment: "The internal probe URLs live here in code"),
 `llms.txt` ("Checks are defined in code (internal/checks/checks.go)" and "`GET /` — the embedded status
 page"), `README.md` ("endpoints stay in the binary"), `CLAUDE.md` (the status-page path
 `workspace/apps/status-page/`); the workspace's `k8s/clusters/meddleware-org/apps/kustomization.yaml` header
-still describes an embedded page (out of scope)
-**Issue:** the code loads targets only from `CHECKS_CONFIG_FILE` and serves no page; these texts say the
+still describes an embedded page (outside this repository)
+**Issue:** the code loads targets only from `CHECKS_CONFIG_FILE` and serves no page; these texts said the
 opposite. It is the same defect class as F1.
-**Impact:** none on behaviour; a reader (or a model reading `llms.txt`) is misled about the central
+**Impact:** none on behaviour; a reader (or a model reading `llms.txt`) was misled about the central
 invariant, and a contributor could reintroduce compiled-in targets in good faith.
-**Remediation / evidence:** correct the four texts; the invariant itself is stated correctly in
-`SECURITY.md`, `AGENTS.md` and the other half of the package comment.
+**Remediation / evidence:** the `checks.go` package comment, `llms.txt` (no `GET /`, the `CHECKS_CONFIG_FILE`
+variable and the runtime-loaded checks), the README (targets live in the mounted config) and `CLAUDE.md` (the
+`repos/status-page` repository) are corrected in 0.1.7; `AGENTS.md` and `CHANGELOG.md` entries added. Not
+fixed here: the header comment of the workspace's `k8s/clusters/meddleware-org/apps/kustomization.yaml` ("served at
+GET / and GET /api/status. The page HTML is embedded in the binary, so there is no ConfigMap") is outside this
+repository and still says so; the workspace should reword it (the status page is the separate `status-page` image).
 
 ### F12 — The published cosign command pins the repository, not the workflow
 
-**Severity:** Info   **Disposition:** ACCEPTED-RISK
-**Where:** `README.md` ("Verifying published images": `--certificate-identity-regexp
-'https://github.com/meddleware-org/platform-probe/.*'`); `bootstrap/images/verify-digests.sh` (workspace)
-**Issue:** the command and the cluster check accept any workflow identity of the repository. IMG lens:
+**Severity:** Info   **Disposition:** MITIGATED (0.1.7, commit pending: the README command; the workspace cluster check is unchanged)
+**Where:** `README.md` ("Verifying published images"); `bootstrap/images/verify-digests.sh` (workspace)
+**Issue:** the command and the cluster check accepted any workflow identity of the repository. IMG lens:
 anchor to the publish workflow and tag refs.
 **Impact:** a workflow added by someone with write access could sign an image the check would accept.
-**Remediation / evidence:** the repository is the signing boundary; anchoring to
-`docker-publish.yml@refs/tags/v*` is a `COSIGN_IDENTITY_REGEXP` override in the workspace script and a
-one-line README change. The deployed digest verified 2026-10-09 (16/16).
+**Remediation / evidence:** the README's `--certificate-identity-regexp` is now
+`^https://github\.com/meddleware-org/platform-probe/\.github/workflows/docker-publish\.yml@refs/tags/v.*$`
+(signing happens in `docker-publish.yml`, which runs on `v*` tags). The workspace script `verify-digests.sh`
+(outside this repository) still uses a repository-wide `COSIGN_IDENTITY_REGEXP`; anchoring it is a workspace
+change. The repository remains the signing boundary. The deployed digest verified 2026-10-09 (16/16).
 
 ### F13 — Self-hosted registry mirror and registry credentials
 
@@ -224,14 +247,18 @@ The credential inventory (scope, holder, expiry, rotation) is the maintainer ite
 
 ### F14 — Coverage gaps: redirect policy and the status handler
 
-**Severity:** Info   **Disposition:** DEFERRED (next patch release; tests only)
+**Severity:** Info   **Disposition:** RESOLVED (0.1.7, commit pending; tests only)
 **Where:** `internal/checks/checks_test.go` (`TestProbe`), `cmd/server/main_test.go`
 **Issue:** `TestProbe` constructs `&Prober{client: &http.Client{}}`, bypassing the `CheckRedirect` set in
-`NewProber`, so the F3 fix is unpinned; `handleStatus` (the JSON body, `Content-Type`, `Cache-Control:
-no-store`) is exercised only through the header tests with a stub handler; `cmd/server` is at 19.6%.
+`NewProber`, so the F3 fix was unpinned; `handleStatus` (the JSON body, `Content-Type`, `Cache-Control:
+no-store`) was exercised only through the header tests with a stub handler; `cmd/server` was at 19.6%.
 **Impact:** a refactor could re-enable redirects or change the response shape without a test failing.
-**Remediation / evidence:** a test with an `httptest` server that answers 302 through `NewProber`'s client,
-and a `handleStatus` test of the full body (the earlier suggestion).
+**Remediation / evidence:** `TestProbeRefusesRedirects` (through `NewProber`'s client, with a counter on the redirect
+target) and `TestHandleStatusServesTheCachedSnapshot` (the real prober behind `newHandler(handleStatus(...))`: the
+seeded `unknown` body, then the probed body, `Content-Type: application/json`, `Cache-Control: no-store`, the
+security headers, only the fields `generated_at`, `overall` and `groups`, no host, port or path of the target, and no
+extra probe from reading the status). Coverage at 0.1.7: checks 93.0%, config 100%, `cmd/server` 33.8% (the rest is
+`main`'s wiring and shutdown).
 
 ## Section A — Invariant verification matrix
 
@@ -239,13 +266,13 @@ and a `handleStatus` test of the full body (the earlier suggestion).
 | --- | --- | --- | --- | --- |
 | I1 | Output is names and statuses only | `checks.go` snapshot types | `TestSnapshotJSONHasNoURLs`; live body read 2026-10-09 | HOLDS |
 | I2 | Probes run only on the server's ticker | `Prober.Start`; handlers read the cached snapshot | source | HOLDS |
-| I3 | A probe error, timeout or unexpected status reads `down` | `probe` | `TestProbe` (502, body mismatch, unreachable) | HOLDS — except an omitted `expect_status` (I8) |
+| I3 | A probe error, timeout or unexpected status reads `down` | `probe`, `statusAccepted` | `TestProbe` (502, body mismatch, unreachable), `TestProbeWithoutExpectStatusAcceptsOnly2xx` | HOLDS (F10) |
 | I4 | A bad config keeps the last good one | `reload` | `TestReloadKeepsLastGoodOnBadEdit`, `TestRunOnceReloadsConfigDynamically` | HOLDS |
 | I5 | Every probe and body is bounded | per-probe context timeout; 64 KiB cap | `TestProbe` | HOLDS (F4) |
 | I6 | A cycle never outlasts its interval | `config.Load` | `TestLoadRejectsBadDurations` | HOLDS (F6) |
 | I7 | Only GET (and HEAD) and OPTIONS on two routes; every response carries the security headers | `ServeMux` method patterns; `withSecurityHeaders` | `TestHandlerSecurityHeaders` (incl. 404, 405) | HOLDS (F7) |
-| I8 | A health check asserts a real condition | `expect_status` is optional (`0` skips the comparison) | none | GAP — see F10 |
-| I9 | Redirects are not followed | `NewProber` `CheckRedirect` | none | HOLDS (code-only) — F3, F14 |
+| I8 | A health check asserts a real condition | an omitted `expect_status` accepts only a 2xx; a value outside 100..599 is rejected | `TestProbeWithoutExpectStatusAcceptsOnly2xx`, `TestLoadFileErrors` | HOLDS (F10) |
+| I9 | Redirects are not followed | `NewProber` `CheckRedirect` | `TestProbeRefusesRedirects` | HOLDS (F3, F14) |
 
 ### Lens categories
 
@@ -265,7 +292,7 @@ and a `handleStatus` test of the full body (the earlier suggestion).
 | IMG | Base images, build context, reproducible build, no secrets | HOLDS — builder digest-pinned and checked against the toolchain; `.dockerignore` excludes Markdown files, `.git`, `.github` and `.env*`; stdlib-only, `CGO_ENABLED=0`, `-trimpath`, version injected at link time; no secret in any `ARG`/`ENV`; only the binary and the CA bundle reach `scratch` |
 | IMG | Runtime user & filesystem | HOLDS — `USER 65534:65534`; the pod sets `runAsNonRoot`, read-only root, no privilege escalation, all capabilities dropped, `RuntimeDefault` seccomp, `automountServiceAccountToken: false`, probes on `/healthz`, requests 5m/16Mi and limits 100m/48Mi; ingress is default-deny with allowances for nginx-ingress and monitoring; no egress policy (the probe must reach other namespaces, whose own policies admit it) |
 | IMG | Scan, SBOM and notices | HOLDS (F9) — Trivy on the published digest before cosign; SBOM attestation from the image; no third-party code is redistributed (standard library compiled in, as in static-server; the builder's CA bundle is the only copied file) |
-| IMG | Verification command | GAP accepted — the identity pins the repository (F12) |
+| IMG | Verification command | MITIGATED — the README pins `docker-publish.yml@refs/tags/v*`; the workspace cluster check still pins the repository (F12) |
 | IMG | Deployment pinning | HOLDS — digest `sha256:c85c5485…` identical in `config/images.yaml` and the cluster kustomization; the base manifest's tag label (`0.1.2`) is overridden by the overlay digest and is cosmetic |
 
 ## Section B — Supply-chain, publish-authority & capability matrix
@@ -295,13 +322,14 @@ build mode exists; no job spends real funds.
 
 ## Section C — Test-coverage & hermetic/live split
 
-### C.1 Coverage grade — A− (checks 92.5%, config 100%, `cmd/server` 19.6%, 2026-10-09)
+### C.1 Coverage grade — A− (checks 93.0%, config 100%, `cmd/server` 33.8%, 2026-10-18)
 
 Tests: rollup and aggregation order, the snapshot JSON has no URLs, `probe` against OK/502/body-match/
 unreachable servers, config load and reload (valid, errors, missing file, last-good kept), duration
-validation, and the handler's security headers and CORS (stub handler). Not covered: the redirect refusal
-and the status handler's body (F14), an omitted `expect_status` (F10). `go test -race` is part of CI and of
-the release gate (F9).
+validation, the handler's security headers and CORS, the redirect refusal through `NewProber`'s client, the
+default-2xx rule and the `expect_status` range (F10, F3), and the status handler's body, content type, caching
+and topology-freeness (F14). Not covered: `main` wiring, signal handling and `-healthcheck`. `go test -race` is
+part of CI and of the release gate (F9).
 
 ### C.2 Hermetic vs. live paths
 
@@ -321,8 +349,8 @@ the release gate (F9).
 - [x] deployed; Secret mounted read-only; `SECURITY.md` accurate (F1)
 - [x] image: digest-pinned builder, `scratch`, non-root, restricted pod, probes and limits, deployed by digest, signed with SBOM and provenance, scanned before signing (F9)
 - [x] every test project runs in CI (`go test -race` in `go-ci.yml`, called by the release)
-- [ ] any failure reads `down`, including a check without `expect_status` — F10 (next patch)
-- [ ] documentation matches the invariant that targets are not compiled in — F11 (next patch)
+- [x] any failure reads `down`, including a check without `expect_status` — F10 (0.1.7: only a 2xx passes without `expect_status`; `TestProbeWithoutExpectStatusAcceptsOnly2xx`; commit pending)
+- [x] documentation matches the invariant that targets are not compiled in — F11 (0.1.7: package comment, `llms.txt`, README, `CLAUDE.md` corrected; the workspace kustomization header is outside the repo; commit pending)
 
 ### pre-mainnet
 
@@ -340,13 +368,13 @@ the release gate (F9).
 
 - **GO-M1–GO-M8** — hold (GO-M3 path confinement, GO-M4 token verification and GO-M6 rate limits N/A: no
   paths, no tokens, cached read-only endpoint; GO-M1 holds with the default header limit).
-- **IMG-M1–IMG-M8** — hold; IMG-M8's verification command pins the repository only (F12).
+- **IMG-M1–IMG-M8** — hold; IMG-M8's published verification command pins the publish workflow and tag refs (F12); the workspace cluster check pins the repository only.
 
 ## Implementation suggestions (SHOULD / MAY)
 
-- SHOULD reject an `expect_status` outside 100..599 in `LoadFile` (F10).
-- SHOULD test the redirect refusal through `NewProber`'s client and the `handleStatus` body (F14).
-- SHOULD correct the four stale texts (F11).
+- SHOULD reword the header comment of the workspace's `k8s/clusters/meddleware-org/apps/kustomization.yaml`
+  (it still describes an embedded status page; F11, outside this repository).
+- SHOULD anchor the workspace's `verify-digests.sh` identity to `docker-publish.yml@refs/tags/v*` (F12).
 - MAY set `MaxHeaderBytes` explicitly (a few KiB) since no handler needs more.
 
 ## Open questions (`OQ#`)
@@ -357,7 +385,7 @@ the release gate (F9).
 ## Risks
 
 - **Probe-target drift** — targets are maintained by hand in the Secret.
-- **Lenient check entries** — an entry without `expect_status` can show green during an outage (F10).
+- **Rollout of the 2xx default (F10)** — if the live Secret has a component without `expect_status` that answers a non-2xx, it will read `down` after 0.1.7 is deployed; the maintainer then adds the explicit code. The committed definitions and `OPERATOR_TASKS.md` give all five components `expect_status: 200`, so none is expected.
 - **Stale snapshot** — the page shows `generated_at`; if the prober loop stopped, the cached snapshot would
   stay (the process exits on a failed listener, not on a stalled loop).
 
@@ -369,3 +397,4 @@ the release gate (F9).
   govulncheck pinned; OQ1 decided.
 - 2026-10-08 — Lens dates reconciled with the registry (`check-template-dates.mjs`): base 2026-10-08, and SUI_CLIENT/GO 2026-10-08 and TS 2026-10-03 where cited. The changes (AUTH/PLATFORM/MCP/DB registered, the GO token row moved to AUTH, JSR in trusted publishing, layered injection guards) alter no disposition here.
 - 2026-10-09 — re-verified at 0.1.6 (`48590c2`) against the code, the workflows, the manifests and the live endpoint. IMG date now 2026-10-08; front matter gains the Go and IMG fields and the deployment status (0.1.6, digest `sha256:c85c5485…`). F1–F6 re-checked (F3 evidence: the redirect policy is unpinned by a test; F4 body read only when a substring is expected). New: F7 RESOLVED (security headers, 0.1.4), F8 RESOLVED (Go 1.26.9 and the toolchain check, 0.1.5), F9 RESOLVED (release runs go-ci, Trivy before cosign, 0.1.6; the web-repo test gap is absent), F10 DEFERRED (omitted `expect_status` reads operational), F11 DEFERRED (stale texts), F14 DEFERRED (coverage), F12 ACCEPTED-RISK, F13 DEFERRED (maintainer). Counts: vet and `go test -race` green. The live endpoint now includes *Chain Access → Chain index*; the SOPS Secret was not decrypted. Section D gates ticked with evidence; unticked: two next-patch items (F10, F11) and the maintainer item F13.
+- 2026-10-18 — fix wave at 0.1.7 (commit pending). F10 RESOLVED (a check without `expect_status` is operational only for a 2xx; `expect_status` outside 100..599 rejected; the live components were checked against the committed definitions, the live page and the public status API, not the encrypted Secret), F11 RESOLVED (four texts corrected; the workspace kustomization header is outside the repo and still stale), F14 RESOLVED (redirect and status-handler tests; coverage checks 93.0%, `cmd/server` 33.8%), F12 MITIGATED (README identity pinned to `docker-publish.yml@refs/tags/v*`; workspace script unchanged), F3 evidence updated (now pinned by a test). F13 stays DEFERRED (maintainer). Checks: `go vet`, `go test -race`, golangci-lint v2.13.0, govulncheck v1.8.0 on go1.26.9, a rootless podman image build and run with a local target. Section D: F10 and F11 ticked; F13 remains. Counts: Section D has one unticked gate (F13).

@@ -17,7 +17,6 @@
 
 ## Endpoints
 
-- `GET /` — the embedded status page.
 - `GET /api/status` — cached JSON snapshot: {generated_at, overall, groups[]}.
 - `GET /healthz` — 200 liveness (independent of probed dependencies).
 - CLI: `-healthcheck` dials /healthz and exits 0/1 (container HEALTHCHECK).
@@ -27,6 +26,8 @@
 - `PORT` (default 8080)
 - `PROBE_INTERVAL` (default 15s) — cycle period + snapshot freshness
 - `PROBE_TIMEOUT` (default 5s) — per-probe timeout; must be < PROBE_INTERVAL
+- `CHECKS_CONFIG_FILE` (default /etc/platform-probe/checks.json) — the probe targets,
+  re-read every cycle
 - `LOG_LEVEL` (default info)
 
 ## Behaviour
@@ -34,15 +35,21 @@
 - Prober goroutine probes all checks concurrently each cycle; component = condition
   met ? operational : down. Rollup: all operational → operational, all down → down,
   mixed → degraded (components → group, groups → overall).
-- Checks are defined in code (internal/checks/checks.go); URLs never reach clients.
-- The "Registry API" check hits the auth-proxy catalog endpoint, so a 200 proves the
-  whole registry auth chain.
+- Checks are loaded at runtime from CHECKS_CONFIG_FILE (in the cluster a mounted,
+  SOPS-encrypted Secret); no probe targets are compiled into the binary or image, and
+  URLs never reach clients. Only config.example.json (dummy example.com entries) is in
+  the repo.
+- A check passes on its expect_status (exact); with no expect_status only a 2xx passes.
+  Redirects are not followed. Point a check at an endpoint that exercises the whole
+  dependency chain so a 200 proves more than reachability.
+- This is a JSON API only: the status page UI is the separate status-page SPA.
 
 ## Security invariants
 
 - Topology-free API: no URLs, hostnames, ports, or error text in any response.
 - Server-side + cached: clients never trigger a probe.
-- Fail safe to down on any probe error/timeout/mismatch; never panic.
+- Fail safe to down on any probe error/timeout/mismatch (including a non-2xx for a
+  check without expect_status); never panic.
 
 ## Supply chain
 

@@ -48,6 +48,9 @@ func TestLoadFileErrors(t *testing.T) {
 		"component without name": `{"groups":[{"name":"G","components":[{"name":"","url":"http://a"}]}]}`,
 		"component without url":  `{"groups":[{"name":"G","components":[{"name":"x","url":""}]}]}`,
 		"unknown field":          `{"groups":[{"name":"G","components":[{"name":"x","url":"http://a","oops":1}]}]}`,
+		"status below 100":       `{"groups":[{"name":"G","components":[{"name":"x","url":"http://a","expect_status":99}]}]}`,
+		"status above 599":       `{"groups":[{"name":"G","components":[{"name":"x","url":"http://a","expect_status":600}]}]}`,
+		"negative status":        `{"groups":[{"name":"G","components":[{"name":"x","url":"http://a","expect_status":-1}]}]}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -61,5 +64,22 @@ func TestLoadFileErrors(t *testing.T) {
 func TestLoadFileMissing(t *testing.T) {
 	if _, err := LoadFile(filepath.Join(t.TempDir(), "absent.json")); err == nil {
 		t.Error("expected an error for a missing file")
+	}
+}
+
+func TestLoadFileExpectStatus(t *testing.T) {
+	checks, err := loadFromString(t, `{"groups":[{"name":"G","components":[
+      {"name":"omitted","url":"http://a"},
+      {"name":"ok","url":"http://b","expect_status":200},
+      {"name":"redirect","url":"http://c","expect_status":302},
+      {"name":"edge","url":"http://d","expect_status":599}]}]}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []int{0, 200, 302, 599}
+	for i, w := range want {
+		if checks[i].ExpectStatus != w {
+			t.Errorf("check %d (%s): ExpectStatus = %d, want %d", i, checks[i].Name, checks[i].ExpectStatus, w)
+		}
 	}
 }

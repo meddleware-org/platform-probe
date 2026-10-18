@@ -2,9 +2,10 @@
 // timer, and caches an aggregated, topology-free snapshot for the status page to
 // read. Clients only ever read the cached snapshot; they never trigger a probe.
 //
-// The internal probe URLs live here in code and are never included in the
-// snapshot, so the public API discloses only capability-level health, not the
-// cluster's internal endpoints or tech stack.
+// No probe targets are compiled in: the check definitions are loaded at runtime
+// from the mounted config file (see LoadFile), and the probe URLs are never
+// included in the snapshot, so the public API discloses only capability-level
+// health, not the cluster's internal endpoints or tech stack.
 package checks
 
 import (
@@ -38,7 +39,7 @@ type Check struct {
 	Group              string // capability group the component belongs to
 	Name               string // component name shown on the status page
 	URL                string // internal in-cluster URL to probe
-	ExpectStatus       int    // required HTTP status code (e.g. 200)
+	ExpectStatus       int    // required HTTP status code (e.g. 200); 0 means any 2xx
 	ExpectBodyContains string // optional substring the response body must contain
 }
 
@@ -178,8 +179,10 @@ func (p *Prober) RunOnce(ctx context.Context) {
 }
 
 // probe performs one HTTP GET and returns StatusOperational only if the response
-// matches the check's expected status code (and optional body substring). Any
-// error, timeout, or mismatch yields StatusDown. No error detail is retained.
+// matches the check's expected status code (and optional body substring). A check
+// without an expected status accepts only a 2xx response, so a 3xx (redirects are
+// not followed), 4xx or 5xx reads down. Any error, timeout, or mismatch yields
+// StatusDown. No error detail is retained.
 func (p *Prober) probe(ctx context.Context, c Check) Status {
 	rctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
@@ -197,7 +200,7 @@ func (p *Prober) probe(ctx context.Context, c Check) Status {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if c.ExpectStatus != 0 && resp.StatusCode != c.ExpectStatus {
+	if !statusAccepted(c.ExpectStatus, resp.StatusCode) {
 		slog.Debug("probe status mismatch", "component", c.Name, "got", resp.StatusCode, "want", c.ExpectStatus)
 		return StatusDown
 	}
@@ -211,6 +214,17 @@ func (p *Prober) probe(ctx context.Context, c Check) Status {
 	}
 
 	return StatusOperational
+}
+
+// statusAccepted reports whether got satisfies the expected status code. An
+// expected value of 0 (the check did not set one) accepts any 2xx and nothing
+// else, so an omitted expect_status never turns a health check into a
+// reachability check.
+func statusAccepted(expect, got int) bool {
+	if expect == 0 {
+		return got >= http.StatusOK && got < http.StatusMultipleChoices
+	}
+	return got == expect
 }
 
 // aggregate turns per-check statuses (aligned with checks) into a Snapshot,

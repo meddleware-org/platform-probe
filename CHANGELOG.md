@@ -5,6 +5,32 @@ All notable changes to platform-probe are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-10-18
+
+### Security
+
+- A check without `expect_status` is now `operational` only for a 2xx response. Before, it read
+  `operational` for any HTTP answer, including a 5xx, so an omitted value turned a health check into a
+  reachability check. Redirects are still not followed, so a 3xx also reads `down` unless it is the
+  expected status. `expect_status` set explicitly is still an exact match.
+- `expect_status` outside 100..599 is rejected when the checks file is loaded (the last good config is kept).
+
+### Fixed
+
+- Stale statements that the probe targets are compiled in (package comment, `llms.txt`, README) now say
+  they are loaded at runtime from `CHECKS_CONFIG_FILE`; `llms.txt` no longer lists a `GET /` page the
+  binary does not serve.
+
+### Added
+
+- Tests for the redirect refusal (through `NewProber`'s client), the default-2xx rule, the
+  `expect_status` range and the `GET /api/status` handler (body, content type, `no-store`, no topology).
+
+### Changed
+
+- The README's cosign command pins the publish workflow and tag refs
+  (`docker-publish.yml@refs/tags/v*`), not just the repository.
+
 ## [0.1.6] - 2026-10-09
 
 ### Security

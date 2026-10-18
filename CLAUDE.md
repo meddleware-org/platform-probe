@@ -27,7 +27,8 @@ through the Cloudflare tunnel), so its output must never leak internal topology.
    regardless of visitor count.
 
 4. **Fail safe to `down` (and keep last-good config).** A probe error, timeout, or
-   unexpected status makes the component `down` — never `operational`, and never a
+   unexpected status makes the component `down` (a check without `expect_status` accepts
+   only a 2xx; redirects are not followed, so a 3xx is `down` unless expected) — never `operational`, and never a
    panic. A config reload that fails to parse keeps the previous good check set
    rather than blanking the page. A cycle always produces a complete snapshot.
 
@@ -51,7 +52,7 @@ component order follow the order in the checks config file.
   `log/slog`, graceful shutdown, `envOr` for optional config, `cmd/server/main.go`
   thin (routing + wiring only); logic lives in `internal/`.
 - The binary is a pure API server — no embedded assets, no HTML. The status page
-  UI is the separate `status-page` Vue SPA (in `workspace/apps/status-page/`).
+  UI is the separate `status-page` Vue SPA (the satellite repo `repos/status-page`).
 
 ## What not to do
 

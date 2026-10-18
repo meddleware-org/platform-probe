@@ -28,7 +28,8 @@ cmd/server/main.go            HTTP server, routing, graceful shutdown, -healthch
 internal/config/config.go     env config: PORT, PROBE_INTERVAL, PROBE_TIMEOUT, CHECKS_CONFIG_FILE, LOG_LEVEL
 internal/checks/config.go     runtime checks config: JSON schema + LoadFile (validate, order)
 internal/checks/checks.go     prober (per-cycle reload), probe, aggregation, cache
-internal/checks/*_test.go     rollup, order, JSON-has-no-URLs, probe, reload, fail-safe, config parse
+internal/checks/*_test.go     rollup, order, JSON-has-no-URLs, probe (default 2xx, redirects refused), reload, fail-safe, config parse
+cmd/server/main_test.go       security headers, CORS, the status handler body
 config.example.json           dummy example config (no real targets)
 ```
 
@@ -45,6 +46,8 @@ not the code. Each component:
   "expect_body_contains": "" }
 ```
 
+- `expect_status` is the exact status required (100..599); omit it and only a `2xx`
+  passes. Redirects are not followed, so a `3xx` fails unless it is the expected code.
 - `name` and the enclosing group `name` are the only fields that reach clients;
   keep them capability-oriented (never a hostname).
 - Prefer a check that exercises a real dependency path (e.g. an endpoint that

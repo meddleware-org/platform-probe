@@ -29,8 +29,9 @@ type fileComponent struct {
 // LoadFile reads and validates the checks configuration at path and flattens it
 // into an ordered []Check (group order, then component order within each group).
 //
-// It rejects an empty or malformed file and any component missing a name or URL,
-// so a bad edit surfaces as an error the caller can log and ignore (keeping the
+// It rejects an empty or malformed file, any component missing a name or URL, and
+// an expect_status outside 100..599 (0 or omitted means any 2xx response), so a
+// bad edit surfaces as an error the caller can log and ignore (keeping the
 // last-good config) rather than silently probing nothing.
 func LoadFile(path string) ([]Check, error) {
 	raw, err := os.ReadFile(path)
@@ -63,6 +64,9 @@ func LoadFile(path string) ([]Check, error) {
 			}
 			if c.URL == "" {
 				return nil, fmt.Errorf("checks config: component %q in group %q has no url", c.Name, g.Name)
+			}
+			if c.ExpectStatus != 0 && (c.ExpectStatus < 100 || c.ExpectStatus > 599) {
+				return nil, fmt.Errorf("checks config: component %q in group %q has expect_status %d outside 100..599", c.Name, g.Name, c.ExpectStatus)
 			}
 			checks = append(checks, Check{
 				Group:              g.Name,

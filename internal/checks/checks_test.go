@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -112,6 +115,91 @@ func TestProbe(t *testing.T) {
 	}
 	if got := p.probe(ctx, Check{URL: "http://127.0.0.1:1/x", ExpectStatus: 200}); got != StatusDown {
 		t.Errorf("unreachable: got %q, want down (not a panic)", got)
+	}
+}
+
+// TestProbeWithoutExpectStatusAcceptsOnly2xx pins F10: a check that sets no
+// expect_status is operational for a 2xx and down for everything else, so an
+// omitted value never turns a health check into a reachability check. It goes
+// through NewProber's client, as the server does.
+func TestProbeWithoutExpectStatusAcceptsOnly2xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		code, err := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/"))
+		if err != nil {
+			code = http.StatusTeapot
+		}
+		if code >= 300 && code < 400 {
+			w.Header().Set("Location", "/200")
+		}
+		w.WriteHeader(code)
+	}))
+	defer srv.Close()
+
+	p := NewProber(filepath.Join(t.TempDir(), "absent.json"), 2*time.Second)
+	ctx := context.Background()
+	for code, want := range map[int]Status{
+		200: StatusOperational,
+		204: StatusOperational,
+		299: StatusOperational,
+		301: StatusDown,
+		302: StatusDown,
+		400: StatusDown,
+		401: StatusDown,
+		404: StatusDown,
+		500: StatusDown,
+		503: StatusDown,
+	} {
+		if got := p.probe(ctx, Check{URL: srv.URL + "/" + strconv.Itoa(code)}); got != want {
+			t.Errorf("no expect_status, HTTP %d: got %q, want %q", code, got, want)
+		}
+	}
+}
+
+func TestProbeExplicitExpectStatusIsExact(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	p := NewProber(filepath.Join(t.TempDir(), "absent.json"), 2*time.Second)
+	ctx := context.Background()
+	if got := p.probe(ctx, Check{URL: srv.URL, ExpectStatus: 204}); got != StatusOperational {
+		t.Errorf("204 vs expect 204: got %q, want operational", got)
+	}
+	if got := p.probe(ctx, Check{URL: srv.URL, ExpectStatus: 200}); got != StatusDown {
+		t.Errorf("204 vs expect 200: got %q, want down (2xx is not enough when a code is set)", got)
+	}
+}
+
+// TestProbeRefusesRedirects pins F3: the prober built by NewProber does not
+// follow a 3xx, so a redirect never reaches (or vouches for) its target and reads
+// down unless the check explicitly expects that 3xx.
+func TestProbeRefusesRedirects(t *testing.T) {
+	var targetHits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	p := NewProber(filepath.Join(t.TempDir(), "absent.json"), 2*time.Second)
+	ctx := context.Background()
+
+	if got := p.probe(ctx, Check{URL: redirector.URL, ExpectStatus: 200}); got != StatusDown {
+		t.Errorf("302 vs expect 200: got %q, want down", got)
+	}
+	if got := p.probe(ctx, Check{URL: redirector.URL}); got != StatusDown {
+		t.Errorf("302 without expect_status: got %q, want down", got)
+	}
+	if got := p.probe(ctx, Check{URL: redirector.URL, ExpectStatus: 302}); got != StatusOperational {
+		t.Errorf("302 vs expect 302: got %q, want operational (the redirect itself is the answer)", got)
+	}
+	if n := targetHits.Load(); n != 0 {
+		t.Errorf("redirect target was requested %d time(s); redirects must not be followed", n)
 	}
 }
 

@@ -19,8 +19,8 @@ every internal endpoint and health path in page source, scaled load with visitor
 and — using opaque `no-cors` fetches — could only tell whether a port answered, not
 whether the service was actually healthy (a 502 showed green).
 
-This service fixes all three: probing is server-side (endpoints stay in the
-binary), cached (clients read a snapshot), and condition-based (a check asserts a
+This service fixes all three: probing is server-side (the endpoints live only in a
+mounted runtime config, never in the binary or image), cached (clients read a snapshot), and condition-based (a check asserts a
 real status code / body, so it reflects end-to-end health). See [SECURITY.md](SECURITY.md).
 
 ## How it works
@@ -98,6 +98,12 @@ Each component takes `name`, `url`, `expect_status`, and optional
 `expect_body_contains`. Group and component order is preserved on the page. A config
 that fails to parse is ignored — the last good set keeps running.
 
+`expect_status` is the exact HTTP status the target must answer (it must be 100–599).
+Redirects are not followed, so a `3xx` is a failure unless it is the expected status.
+If `expect_status` is omitted, the component is `operational` only for a `2xx`
+response; a `3xx`, `4xx` or `5xx` reads `down`. Set it explicitly anyway, so the check
+states the condition it asserts.
+
 ## Verifying published images
 
 Images are multi-arch, carry an SBOM + SLSA provenance, and are signed with keyless
@@ -106,7 +112,7 @@ Images are multi-arch, carry an SBOM + SLSA provenance, and are signed with keyl
 ```bash
 cosign verify \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp 'https://github.com/meddleware-org/platform-probe/.*' \
+  --certificate-identity-regexp '^https://github\.com/meddleware-org/platform-probe/\.github/workflows/docker-publish\.yml@refs/tags/v.*$' \
   quay.io/meddleware-org/platform-probe:<tag>
 ```
 
