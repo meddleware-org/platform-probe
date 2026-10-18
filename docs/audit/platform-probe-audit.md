@@ -53,8 +53,8 @@ Re-verified 2026-10-09 (0.1.6; `go vet` and `go test -race` green, coverage chec
   for a 2xx (it read `operational` for any HTTP response, including a 5xx); the stale statements about where the
   probe targets live are corrected; the redirect refusal and the status handler are tested.
 - Accepted or maintainer items: **F12** the README's cosign command pinned the repository, not the workflow
-  (MITIGATED 0.1.7: the README now pins `docker-publish.yml@refs/tags/v*`; the workspace's `verify-digests.sh`
-  still uses the repository-wide identity); **F13** the registry mirror and credential inventory (DEFERRED, maintainer).
+  (RESOLVED: the README has pinned `docker-publish.yml@refs/tags/v*` since 0.1.7, and the workspace's `verify-digests.sh`
+  default became workflow-anchored on 2026-10-18); **F13** the registry mirror and credential inventory (DEFERRED, maintainer).
 
 Fix wave 2026-10-18 (0.1.7: `go vet`, `go test -race` green, coverage checks 93.0%, config 100%, `cmd/server`
 33.8%; golangci-lint v2.13.0 and govulncheck v1.8.0 clean on the pinned 1.26.9 toolchain; image built with
@@ -222,16 +222,18 @@ repository and still says so; the workspace should reword it (the status page is
 
 ### F12 — The published cosign command pins the repository, not the workflow
 
-**Severity:** Info   **Disposition:** MITIGATED (0.1.7, commit `bb33f0b`: the README command; the workspace cluster check is unchanged)
+**Severity:** Info   **Disposition:** RESOLVED (README command 0.1.7, commit `bb33f0b`; workspace `verify-digests.sh` default 2026-10-18; was MITIGATED, before that ACCEPTED-RISK)
 **Where:** `README.md` ("Verifying published images"); `bootstrap/images/verify-digests.sh` (workspace)
 **Issue:** the command and the cluster check accepted any workflow identity of the repository. IMG lens:
 anchor to the publish workflow and tag refs.
 **Impact:** a workflow added by someone with write access could sign an image the check would accept.
 **Remediation / evidence:** the README's `--certificate-identity-regexp` is now
 `^https://github\.com/meddleware-org/platform-probe/\.github/workflows/docker-publish\.yml@refs/tags/v.*$`
-(signing happens in `docker-publish.yml`, which runs on `v*` tags). The workspace script `verify-digests.sh`
-(outside this repository) still uses a repository-wide `COSIGN_IDENTITY_REGEXP`; anchoring it is a workspace
-change. The repository remains the signing boundary. The deployed digests verified 2026-10-09 (0.1.6) and 2026-10-18 (0.1.7), 16/16 both times.
+(signing happens in `docker-publish.yml`, which runs on `v*` tags; re-read in `README.md` on 2026-10-18). The workspace script
+`verify-digests.sh` was the remaining repository-wide part; on 2026-10-18 its default identity became
+`^https://github\.com/meddleware-org/${name}/\.github/workflows/docker-publish\.yml@refs/tags/v` (`COSIGN_IDENTITY_REGEXP` still overrides it).
+All 16 deployed and contingency images verified valid against it on 2026-10-18 (`STRICT=0 bash bootstrap/images/verify-digests.sh`,
+0.1.7 included); 2026-10-09 (0.1.6) was checked with the earlier repository-wide identity. Nothing remains.
 
 ### F13 — Self-hosted registry mirror and registry credentials
 
@@ -291,7 +293,7 @@ extra probe from reading the status). Coverage at 0.1.7: checks 93.0%, config 10
 | IMG | Base images, build context, reproducible build, no secrets | HOLDS — builder digest-pinned and checked against the toolchain; `.dockerignore` excludes Markdown files, `.git`, `.github` and `.env*`; stdlib-only, `CGO_ENABLED=0`, `-trimpath`, version injected at link time; no secret in any `ARG`/`ENV`; only the binary and the CA bundle reach `scratch` |
 | IMG | Runtime user & filesystem | HOLDS — `USER 65534:65534`; the pod sets `runAsNonRoot`, read-only root, no privilege escalation, all capabilities dropped, `RuntimeDefault` seccomp, `automountServiceAccountToken: false`, probes on `/healthz`, requests 5m/16Mi and limits 100m/48Mi; ingress is default-deny with allowances for nginx-ingress and monitoring; no egress policy (the probe must reach other namespaces, whose own policies admit it) |
 | IMG | Scan, SBOM and notices | HOLDS (F9) — Trivy on the published digest before cosign; SBOM attestation from the image; no third-party code is redistributed (standard library compiled in, as in static-server; the builder's CA bundle is the only copied file) |
-| IMG | Verification command | MITIGATED — the README pins `docker-publish.yml@refs/tags/v*`; the workspace cluster check still pins the repository (F12) |
+| IMG | Verification command | HOLDS — the README pins `docker-publish.yml@refs/tags/v*` and the workspace cluster check pins the same workflow and tag refs since 2026-10-18 (F12) |
 | IMG | Deployment pinning | HOLDS — digest `sha256:1ae74b67…7e2a` (0.1.7, rolled out 2026-10-18; was `sha256:c85c5485…` at 0.1.6) identical in `config/images.yaml` and the cluster kustomization; the base manifest's tag label (`0.1.2`) is overridden by the overlay digest and is cosmetic |
 
 ## Section B — Supply-chain, publish-authority & capability matrix
@@ -367,13 +369,13 @@ part of CI and of the release gate (F9).
 
 - **GO-M1–GO-M8** — hold (GO-M3 path confinement, GO-M4 token verification and GO-M6 rate limits N/A: no
   paths, no tokens, cached read-only endpoint; GO-M1 holds with the default header limit).
-- **IMG-M1–IMG-M8** — hold; IMG-M8's published verification command pins the publish workflow and tag refs (F12); the workspace cluster check pins the repository only.
+- **IMG-M1–IMG-M8** — hold; IMG-M8's published verification command pins the publish workflow and tag refs (F12), and since 2026-10-18 so does the workspace cluster check.
 
 ## Implementation suggestions (SHOULD / MAY)
 
 - SHOULD reword the header comment of the workspace's `k8s/clusters/meddleware-org/apps/kustomization.yaml`
   (it still describes an embedded status page; F11, outside this repository).
-- SHOULD anchor the workspace's `verify-digests.sh` identity to `docker-publish.yml@refs/tags/v*` (F12).
+- ~~SHOULD anchor the workspace's `verify-digests.sh` identity to `docker-publish.yml@refs/tags/v*` (F12).~~ Done 2026-10-18.
 - MAY set `MaxHeaderBytes` explicitly (a few KiB) since no handler needs more.
 
 ## Open questions (`OQ#`)
@@ -398,3 +400,4 @@ part of CI and of the release gate (F9).
 - 2026-10-09 — re-verified at 0.1.6 (`48590c2`) against the code, the workflows, the manifests and the live endpoint. IMG date now 2026-10-08; front matter gains the Go and IMG fields and the deployment status (0.1.6, digest `sha256:c85c5485…`). F1–F6 re-checked (F3 evidence: the redirect policy is unpinned by a test; F4 body read only when a substring is expected). New: F7 RESOLVED (security headers, 0.1.4), F8 RESOLVED (Go 1.26.9 and the toolchain check, 0.1.5), F9 RESOLVED (release runs go-ci, Trivy before cosign, 0.1.6; the web-repo test gap is absent), F10 DEFERRED (omitted `expect_status` reads operational), F11 DEFERRED (stale texts), F14 DEFERRED (coverage), F12 ACCEPTED-RISK, F13 DEFERRED (maintainer). Counts: vet and `go test -race` green. The live endpoint now includes *Chain Access → Chain index*; the SOPS Secret was not decrypted. Section D gates ticked with evidence; unticked: two next-patch items (F10, F11) and the maintainer item F13.
 - 2026-10-18 — fix wave at 0.1.7 (commit `bb33f0b`). F10 RESOLVED (a check without `expect_status` is operational only for a 2xx; `expect_status` outside 100..599 rejected; the live components were checked against the committed definitions, the live page and the public status API, not the encrypted Secret), F11 RESOLVED (four texts corrected; the workspace kustomization header is outside the repo and still stale), F14 RESOLVED (redirect and status-handler tests; coverage checks 93.0%, `cmd/server` 33.8%), F12 MITIGATED (README identity pinned to `docker-publish.yml@refs/tags/v*`; workspace script unchanged), F3 evidence updated (now pinned by a test). F13 stays DEFERRED (maintainer). Checks: `go vet`, `go test -race`, golangci-lint v2.13.0, govulncheck v1.8.0 on go1.26.9, a rootless podman image build and run with a local target. Section D: F10 and F11 ticked; F13 remains. Counts: Section D has one unticked gate (F13).
 - 2026-10-18 — released and deployed (`v0.1.7` = `2f1ef48`, `0.1.7@sha256:1ae74b672f1beed7a7e826250608bcb499da81cdc1c0f0ff6d5a94e9531c7e2a`), verified live. Cosign keyless signature verified against the workflow-anchored identity (`docker-publish.yml@refs/tags/v*`, `verify-digests.sh` 16/16); rollout via `kubectl apply -k` (apps overlay) succeeded. The stricter default (F10: a check without `expect_status` is operational only for a 2xx) caused no component to change state: the live status API (`/api/status`, re-read 2026-10-18) reads `overall: operational` with all five components operational. F13 (maintainer) unchanged.
+- 2026-10-18 — F12 (cosign identity) RESOLVED: the default identity in `bootstrap/images/verify-digests.sh` is now workflow-anchored (`^https://github\.com/meddleware-org/${name}/\.github/workflows/docker-publish\.yml@refs/tags/v`); all 16 deployed and contingency images verified valid against it (`STRICT=0 bash bootstrap/images/verify-digests.sh`), and the README `cosign verify` command is workflow-pinned (checked). F12 moves from MITIGATED to RESOLVED; nothing remains.
