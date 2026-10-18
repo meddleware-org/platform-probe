@@ -15,7 +15,7 @@ Not triggered: AUTH (no token or credential is issued, verified or held; the mou
 **Deployed by:** `k8s/base/apps/status/deployment.yaml` (namespace `apps`), overlay `k8s/clusters/meddleware-org/apps`; digest from `config/images.yaml`; probe targets from the SOPS-managed Secret `status-checks` (`status-checks-secret.enc.yaml`)
 **Build args:** `VERSION` (link-time version), `TARGETOS`, `TARGETARCH`, and the image-label strings `VENDOR`, `DESCRIPTION`, `SOURCE_URL`, `DOCUMENTATION_URL`, `IMAGE_URL` — none secret
 **Deployment status:** image `quay.io/meddleware-org/platform-probe` at 0.1.6 (`sha256:c85c5485…`, deployed 2026-10-09) in `k8s/base/apps/status` (namespace `apps`); live `https://status.meddleware.co.uk/api/status` returns the topology-free snapshot (three groups including *Chain Access → Chain index*) with the security headers
-**Review date:** 2026-09-18 (first pass) · re-verified 2026-10-03 · re-verified 2026-10-09 · fix wave 2026-10-18 (0.1.7, commit pending)
+**Review date:** 2026-09-18 (first pass) · re-verified 2026-10-03 · re-verified 2026-10-09 · fix wave 2026-10-18 (0.1.7, commit `bb33f0b`)
 **Reviewer:** Internal review
 **Severity ceiling:** Low — public but topology-free: it probes internal endpoints on a timer and serves only names and coarse statuses.
 **Status:** fix wave 2026-10-18 (0.1.7, unreleased; the deployed image is 0.1.6)
@@ -49,7 +49,7 @@ Re-verified 2026-10-09 (0.1.6; `go vet` and `go test -race` green, coverage chec
   gap (the reusable CI workflow lacking the unit tests) is **not present here**: `go-ci.yml` runs
   `go test -race`, and the release `verify` job calls it.
 - Defects found by this pass: **F10 (Low)**, **F11 (Info)** and **F14 (Info)** were DEFERRED to the next patch and are
-  RESOLVED in 0.1.7 (2026-10-18, commit pending): a component without `expect_status` is now `operational` only
+  RESOLVED in 0.1.7 (2026-10-18, commit `bb33f0b`): a component without `expect_status` is now `operational` only
   for a 2xx (it read `operational` for any HTTP response, including a 5xx); the stale statements about where the
   probe targets live are corrected; the redirect refusal and the status handler are tested.
 - Accepted or maintainer items: **F12** the README's cosign command pinned the repository, not the workflow
@@ -178,7 +178,7 @@ modules, no bundled npm code).
 
 ### F10 — A component without `expect_status` reads operational for any response
 
-**Severity:** Low   **Disposition:** RESOLVED (0.1.7, commit pending; Section D pre-testnet "any failure reads `down`")
+**Severity:** Low   **Disposition:** RESOLVED (0.1.7, commit `bb33f0b`; Section D pre-testnet "any failure reads `down`")
 **Where:** `internal/checks/checks.go` (`probe`, `statusAccepted`), `internal/checks/config.go` (`LoadFile`)
 **Issue:** `expect_status` is optional in the JSON and defaults to `0`, which skipped the status comparison.
 A component that omitted it read `operational` for any HTTP answer, including `500` and `503`, as long as
@@ -204,7 +204,7 @@ omitted field. After the 0.1.7 rollout confirm the page is unchanged; a componen
 
 ### F11 — Stale statements about where the probe targets live
 
-**Severity:** Info   **Disposition:** RESOLVED (0.1.7, commit pending; documentation)
+**Severity:** Info   **Disposition:** RESOLVED (0.1.7, commit `bb33f0b`; documentation)
 **Where:** `internal/checks/checks.go` (package comment: "The internal probe URLs live here in code"),
 `llms.txt` ("Checks are defined in code (internal/checks/checks.go)" and "`GET /` — the embedded status
 page"), `README.md` ("endpoints stay in the binary"), `CLAUDE.md` (the status-page path
@@ -223,7 +223,7 @@ repository and still says so; the workspace should reword it (the status page is
 
 ### F12 — The published cosign command pins the repository, not the workflow
 
-**Severity:** Info   **Disposition:** MITIGATED (0.1.7, commit pending: the README command; the workspace cluster check is unchanged)
+**Severity:** Info   **Disposition:** MITIGATED (0.1.7, commit `bb33f0b`: the README command; the workspace cluster check is unchanged)
 **Where:** `README.md` ("Verifying published images"); `bootstrap/images/verify-digests.sh` (workspace)
 **Issue:** the command and the cluster check accepted any workflow identity of the repository. IMG lens:
 anchor to the publish workflow and tag refs.
@@ -247,7 +247,7 @@ The credential inventory (scope, holder, expiry, rotation) is the maintainer ite
 
 ### F14 — Coverage gaps: redirect policy and the status handler
 
-**Severity:** Info   **Disposition:** RESOLVED (0.1.7, commit pending; tests only)
+**Severity:** Info   **Disposition:** RESOLVED (0.1.7, commit `bb33f0b`; tests only)
 **Where:** `internal/checks/checks_test.go` (`TestProbe`), `cmd/server/main_test.go`
 **Issue:** `TestProbe` constructs `&Prober{client: &http.Client{}}`, bypassing the `CheckRedirect` set in
 `NewProber`, so the F3 fix was unpinned; `handleStatus` (the JSON body, `Content-Type`, `Cache-Control:
@@ -349,8 +349,8 @@ part of CI and of the release gate (F9).
 - [x] deployed; Secret mounted read-only; `SECURITY.md` accurate (F1)
 - [x] image: digest-pinned builder, `scratch`, non-root, restricted pod, probes and limits, deployed by digest, signed with SBOM and provenance, scanned before signing (F9)
 - [x] every test project runs in CI (`go test -race` in `go-ci.yml`, called by the release)
-- [x] any failure reads `down`, including a check without `expect_status` — F10 (0.1.7: only a 2xx passes without `expect_status`; `TestProbeWithoutExpectStatusAcceptsOnly2xx`; commit pending)
-- [x] documentation matches the invariant that targets are not compiled in — F11 (0.1.7: package comment, `llms.txt`, README, `CLAUDE.md` corrected; the workspace kustomization header is outside the repo; commit pending)
+- [x] any failure reads `down`, including a check without `expect_status` — F10 (0.1.7: only a 2xx passes without `expect_status`; `TestProbeWithoutExpectStatusAcceptsOnly2xx`; commit `bb33f0b`)
+- [x] documentation matches the invariant that targets are not compiled in — F11 (0.1.7: package comment, `llms.txt`, README, `CLAUDE.md` corrected; the workspace kustomization header is outside the repo; commit `bb33f0b`)
 
 ### pre-mainnet
 
@@ -397,4 +397,4 @@ part of CI and of the release gate (F9).
   govulncheck pinned; OQ1 decided.
 - 2026-10-08 — Lens dates reconciled with the registry (`check-template-dates.mjs`): base 2026-10-08, and SUI_CLIENT/GO 2026-10-08 and TS 2026-10-03 where cited. The changes (AUTH/PLATFORM/MCP/DB registered, the GO token row moved to AUTH, JSR in trusted publishing, layered injection guards) alter no disposition here.
 - 2026-10-09 — re-verified at 0.1.6 (`48590c2`) against the code, the workflows, the manifests and the live endpoint. IMG date now 2026-10-08; front matter gains the Go and IMG fields and the deployment status (0.1.6, digest `sha256:c85c5485…`). F1–F6 re-checked (F3 evidence: the redirect policy is unpinned by a test; F4 body read only when a substring is expected). New: F7 RESOLVED (security headers, 0.1.4), F8 RESOLVED (Go 1.26.9 and the toolchain check, 0.1.5), F9 RESOLVED (release runs go-ci, Trivy before cosign, 0.1.6; the web-repo test gap is absent), F10 DEFERRED (omitted `expect_status` reads operational), F11 DEFERRED (stale texts), F14 DEFERRED (coverage), F12 ACCEPTED-RISK, F13 DEFERRED (maintainer). Counts: vet and `go test -race` green. The live endpoint now includes *Chain Access → Chain index*; the SOPS Secret was not decrypted. Section D gates ticked with evidence; unticked: two next-patch items (F10, F11) and the maintainer item F13.
-- 2026-10-18 — fix wave at 0.1.7 (commit pending). F10 RESOLVED (a check without `expect_status` is operational only for a 2xx; `expect_status` outside 100..599 rejected; the live components were checked against the committed definitions, the live page and the public status API, not the encrypted Secret), F11 RESOLVED (four texts corrected; the workspace kustomization header is outside the repo and still stale), F14 RESOLVED (redirect and status-handler tests; coverage checks 93.0%, `cmd/server` 33.8%), F12 MITIGATED (README identity pinned to `docker-publish.yml@refs/tags/v*`; workspace script unchanged), F3 evidence updated (now pinned by a test). F13 stays DEFERRED (maintainer). Checks: `go vet`, `go test -race`, golangci-lint v2.13.0, govulncheck v1.8.0 on go1.26.9, a rootless podman image build and run with a local target. Section D: F10 and F11 ticked; F13 remains. Counts: Section D has one unticked gate (F13).
+- 2026-10-18 — fix wave at 0.1.7 (commit `bb33f0b`). F10 RESOLVED (a check without `expect_status` is operational only for a 2xx; `expect_status` outside 100..599 rejected; the live components were checked against the committed definitions, the live page and the public status API, not the encrypted Secret), F11 RESOLVED (four texts corrected; the workspace kustomization header is outside the repo and still stale), F14 RESOLVED (redirect and status-handler tests; coverage checks 93.0%, `cmd/server` 33.8%), F12 MITIGATED (README identity pinned to `docker-publish.yml@refs/tags/v*`; workspace script unchanged), F3 evidence updated (now pinned by a test). F13 stays DEFERRED (maintainer). Checks: `go vet`, `go test -race`, golangci-lint v2.13.0, govulncheck v1.8.0 on go1.26.9, a rootless podman image build and run with a local target. Section D: F10 and F11 ticked; F13 remains. Counts: Section D has one unticked gate (F13).
