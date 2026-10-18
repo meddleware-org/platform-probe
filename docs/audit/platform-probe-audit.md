@@ -9,16 +9,16 @@ Not triggered: AUTH (no token or credential is issued, verified or held; the mou
 **Modules:** none (standard library only; no `go.sum`)
 **Entry points:** `cmd/server` (one binary, listens on `:8080`, `-healthcheck` mode for the container `HEALTHCHECK`); routes `GET /api/status`, `OPTIONS /api/status`, `GET /healthz`
 **Upstreams:** the internal health endpoints named in the mounted checks file (plain GET, no authentication, no credentials sent); none are named in the repository or the image
-**Images:** `quay.io/meddleware-org/platform-probe:0.1.6@sha256:c85c5485…a2a7` (Docker Hub mirror; cosign keyless, SPDX SBOM attestation, build provenance; verified 2026-10-09, `verify-digests.sh` 16/16)
+**Images:** `quay.io/meddleware-org/platform-probe:0.1.7@sha256:1ae74b672f1beed7a7e826250608bcb499da81cdc1c0f0ff6d5a94e9531c7e2a` (Docker Hub mirror, same digest; cosign keyless signature verified 2026-10-18 against the workflow-anchored identity `docker-publish.yml@refs/tags/v*`, `verify-digests.sh` 16/16; SPDX SBOM attestation, build provenance). Superseded 0.1.6 was `sha256:c85c5485…a2a7`
 **Base images:** build `golang:1.26.9-bookworm@sha256:d9c68c2c…453c`; runtime `scratch` (the binary and the builder's CA bundle only)
 **Runtime user:** `USER 65534:65534`   **Runtime FS:** read-only root; the only mount is the checks Secret, read-only
 **Deployed by:** `k8s/base/apps/status/deployment.yaml` (namespace `apps`), overlay `k8s/clusters/meddleware-org/apps`; digest from `config/images.yaml`; probe targets from the SOPS-managed Secret `status-checks` (`status-checks-secret.enc.yaml`)
 **Build args:** `VERSION` (link-time version), `TARGETOS`, `TARGETARCH`, and the image-label strings `VENDOR`, `DESCRIPTION`, `SOURCE_URL`, `DOCUMENTATION_URL`, `IMAGE_URL` — none secret
-**Deployment status:** image `quay.io/meddleware-org/platform-probe` at 0.1.6 (`sha256:c85c5485…`, deployed 2026-10-09) in `k8s/base/apps/status` (namespace `apps`); live `https://status.meddleware.co.uk/api/status` returns the topology-free snapshot (three groups including *Chain Access → Chain index*) with the security headers
+**Deployment status:** image `quay.io/meddleware-org/platform-probe` at 0.1.7 (`sha256:1ae74b67…7e2a`; release tag `v0.1.7` = `2f1ef48`; released, signature verified and deployed 2026-10-18; the rollout succeeded; 0.1.6 `sha256:c85c5485…` was deployed 2026-10-09) in `k8s/base/apps/status` (namespace `apps`); live `https://status.meddleware.co.uk/api/status` returns the topology-free snapshot (three groups including *Chain Access → Chain index*) with the security headers; after the 0.1.7 rollout the live snapshot read `overall: operational` with every component `operational` (re-read 2026-10-18), so the stricter 2xx default (F10) changed no component's state
 **Review date:** 2026-09-18 (first pass) · re-verified 2026-10-03 · re-verified 2026-10-09 · fix wave 2026-10-18 (0.1.7, commit `bb33f0b`)
 **Reviewer:** Internal review
 **Severity ceiling:** Low — public but topology-free: it probes internal endpoints on a timer and serves only names and coarse statuses.
-**Status:** fix wave 2026-10-18 (0.1.7, unreleased; the deployed image is 0.1.6)
+**Status:** fix wave 2026-10-18 (0.1.7, released and deployed 2026-10-18; signature verified; rollout succeeded)
 
 ---
 
@@ -63,8 +63,7 @@ rootless podman and smoke-tested).
 The severity ceiling stays Low. The live Secret is SOPS-encrypted and was not decrypted. The committed bootstrap
 definitions (`bootstrap/profiles/single-node.sh`, `recover-secrets.sh`) and `OPERATOR_TASKS.md` give every one of the
 five live components `expect_status: 200`, and the live snapshot read all `operational` on 2026-10-18, so the
-2xx default of F10 should change nothing on the page; if the Secret differs and a component omits `expect_status`
-while answering a non-2xx, it will read `down` after the 0.1.7 rollout and the maintainer should add the explicit code.
+2xx default of F10 was expected to change nothing on the page. **Verified after the 0.1.7 rollout (2026-10-18):** the status page API reads `overall: operational` with every component (Sign-in, Authorization, Registry API, Registry UI, Chain index) `operational`, so the stricter default (a check without `expect_status` is operational only for a 2xx) caused no component to change state.
 
 ## Threat model / trust boundaries
 
@@ -197,10 +196,10 @@ outside 100..599, keeping the last good config. Pinned by `TestProbeWithoutExpec
 test. Rollout check: the live Secret is SOPS-encrypted and was not read; the committed bootstrap definitions
 (`single-node.sh`, `recover-secrets.sh`) and `OPERATOR_TASKS.md` give all five live components
 (Sign-in, Authorization, Registry API, Registry UI, Chain index) `expect_status: 200`, and the live page read
-all `operational` on 2026-10-18, so no component is expected to change. A stricter rule (reject an entry without
+all `operational` on 2026-10-18, so no component was expected to change. A stricter rule (reject an entry without
 `expect_status`) was not chosen: it would fail the whole reload, and at start-up leave the page empty, for one
-omitted field. After the 0.1.7 rollout confirm the page is unchanged; a component that now reads `down` omits
-`expect_status` and answers a non-2xx, and needs the explicit code added to the Secret.
+omitted field. After the 0.1.7 rollout the page was confirmed unchanged (2026-10-18: all components operational), so no Secret change was needed; a component that read `down` would have omitted
+`expect_status` and answered a non-2xx, and needed the explicit code added to the Secret.
 
 ### F11 — Stale statements about where the probe targets live
 
@@ -232,7 +231,7 @@ anchor to the publish workflow and tag refs.
 `^https://github\.com/meddleware-org/platform-probe/\.github/workflows/docker-publish\.yml@refs/tags/v.*$`
 (signing happens in `docker-publish.yml`, which runs on `v*` tags). The workspace script `verify-digests.sh`
 (outside this repository) still uses a repository-wide `COSIGN_IDENTITY_REGEXP`; anchoring it is a workspace
-change. The repository remains the signing boundary. The deployed digest verified 2026-10-09 (16/16).
+change. The repository remains the signing boundary. The deployed digests verified 2026-10-09 (0.1.6) and 2026-10-18 (0.1.7), 16/16 both times.
 
 ### F13 — Self-hosted registry mirror and registry credentials
 
@@ -293,7 +292,7 @@ extra probe from reading the status). Coverage at 0.1.7: checks 93.0%, config 10
 | IMG | Runtime user & filesystem | HOLDS — `USER 65534:65534`; the pod sets `runAsNonRoot`, read-only root, no privilege escalation, all capabilities dropped, `RuntimeDefault` seccomp, `automountServiceAccountToken: false`, probes on `/healthz`, requests 5m/16Mi and limits 100m/48Mi; ingress is default-deny with allowances for nginx-ingress and monitoring; no egress policy (the probe must reach other namespaces, whose own policies admit it) |
 | IMG | Scan, SBOM and notices | HOLDS (F9) — Trivy on the published digest before cosign; SBOM attestation from the image; no third-party code is redistributed (standard library compiled in, as in static-server; the builder's CA bundle is the only copied file) |
 | IMG | Verification command | MITIGATED — the README pins `docker-publish.yml@refs/tags/v*`; the workspace cluster check still pins the repository (F12) |
-| IMG | Deployment pinning | HOLDS — digest `sha256:c85c5485…` identical in `config/images.yaml` and the cluster kustomization; the base manifest's tag label (`0.1.2`) is overridden by the overlay digest and is cosmetic |
+| IMG | Deployment pinning | HOLDS — digest `sha256:1ae74b67…7e2a` (0.1.7, rolled out 2026-10-18; was `sha256:c85c5485…` at 0.1.6) identical in `config/images.yaml` and the cluster kustomization; the base manifest's tag label (`0.1.2`) is overridden by the overlay digest and is cosmetic |
 
 ## Section B — Supply-chain, publish-authority & capability matrix
 
@@ -385,7 +384,7 @@ part of CI and of the release gate (F9).
 ## Risks
 
 - **Probe-target drift** — targets are maintained by hand in the Secret.
-- **Rollout of the 2xx default (F10)** — if the live Secret has a component without `expect_status` that answers a non-2xx, it will read `down` after 0.1.7 is deployed; the maintainer then adds the explicit code. The committed definitions and `OPERATOR_TASKS.md` give all five components `expect_status: 200`, so none is expected.
+- **Rollout of the 2xx default (F10)** — if the live Secret has a component without `expect_status` that answers a non-2xx, it would read `down` after 0.1.7 is deployed; the maintainer would then add the explicit code. The committed definitions and `OPERATOR_TASKS.md` give all five components `expect_status: 200`. **Checked after the rollout (2026-10-18):** all components `operational`; the risk did not materialise.
 - **Stale snapshot** — the page shows `generated_at`; if the prober loop stopped, the cached snapshot would
   stay (the process exits on a failed listener, not on a stalled loop).
 
@@ -398,3 +397,4 @@ part of CI and of the release gate (F9).
 - 2026-10-08 — Lens dates reconciled with the registry (`check-template-dates.mjs`): base 2026-10-08, and SUI_CLIENT/GO 2026-10-08 and TS 2026-10-03 where cited. The changes (AUTH/PLATFORM/MCP/DB registered, the GO token row moved to AUTH, JSR in trusted publishing, layered injection guards) alter no disposition here.
 - 2026-10-09 — re-verified at 0.1.6 (`48590c2`) against the code, the workflows, the manifests and the live endpoint. IMG date now 2026-10-08; front matter gains the Go and IMG fields and the deployment status (0.1.6, digest `sha256:c85c5485…`). F1–F6 re-checked (F3 evidence: the redirect policy is unpinned by a test; F4 body read only when a substring is expected). New: F7 RESOLVED (security headers, 0.1.4), F8 RESOLVED (Go 1.26.9 and the toolchain check, 0.1.5), F9 RESOLVED (release runs go-ci, Trivy before cosign, 0.1.6; the web-repo test gap is absent), F10 DEFERRED (omitted `expect_status` reads operational), F11 DEFERRED (stale texts), F14 DEFERRED (coverage), F12 ACCEPTED-RISK, F13 DEFERRED (maintainer). Counts: vet and `go test -race` green. The live endpoint now includes *Chain Access → Chain index*; the SOPS Secret was not decrypted. Section D gates ticked with evidence; unticked: two next-patch items (F10, F11) and the maintainer item F13.
 - 2026-10-18 — fix wave at 0.1.7 (commit `bb33f0b`). F10 RESOLVED (a check without `expect_status` is operational only for a 2xx; `expect_status` outside 100..599 rejected; the live components were checked against the committed definitions, the live page and the public status API, not the encrypted Secret), F11 RESOLVED (four texts corrected; the workspace kustomization header is outside the repo and still stale), F14 RESOLVED (redirect and status-handler tests; coverage checks 93.0%, `cmd/server` 33.8%), F12 MITIGATED (README identity pinned to `docker-publish.yml@refs/tags/v*`; workspace script unchanged), F3 evidence updated (now pinned by a test). F13 stays DEFERRED (maintainer). Checks: `go vet`, `go test -race`, golangci-lint v2.13.0, govulncheck v1.8.0 on go1.26.9, a rootless podman image build and run with a local target. Section D: F10 and F11 ticked; F13 remains. Counts: Section D has one unticked gate (F13).
+- 2026-10-18 — released and deployed (`v0.1.7` = `2f1ef48`, `0.1.7@sha256:1ae74b672f1beed7a7e826250608bcb499da81cdc1c0f0ff6d5a94e9531c7e2a`), verified live. Cosign keyless signature verified against the workflow-anchored identity (`docker-publish.yml@refs/tags/v*`, `verify-digests.sh` 16/16); rollout via `kubectl apply -k` (apps overlay) succeeded. The stricter default (F10: a check without `expect_status` is operational only for a 2xx) caused no component to change state: the live status API (`/api/status`, re-read 2026-10-18) reads `overall: operational` with all five components operational. F13 (maintainer) unchanged.
