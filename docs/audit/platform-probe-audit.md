@@ -238,8 +238,8 @@ All 16 deployed and contingency images verified valid against it on 2026-10-18 (
 ### F13 — Self-hosted registry mirror and registry credentials
 
 **Severity:** Info   **Disposition:** DEFERRED (maintainer; `OPERATOR_TASKS.md` "Image registry credentials — record scope and rotation")
-**Where:** `docker-publish.yml` private mirror jobs (`continue-on-error: true`); `QUAY_TOKEN`, `DOCKERHUB_TOKEN`, `PRIVATE_REGISTRY_*`
-**Issue:** the mirror jobs fail without registry credentials and never sign; the registry tokens are
+**Where:** `docker-publish.yml` `mirror-private` job (`continue-on-error: true`); `QUAY_TOKEN`, `DOCKERHUB_TOKEN`, `PRIVATE_REGISTRY_*`
+**Issue:** the `mirror-private` job (a digest-preserving copy of the published, signed image, not a rebuild) fails without registry credentials; the registry tokens are
 long-lived and not yet inventoried.
 **Impact:** the mirror may lag; a leaked token could push an unsigned tag (the cluster pins digests and
 verifies signatures, so it would not run).
@@ -403,3 +403,4 @@ part of CI and of the release gate (F9).
 - 2026-10-18 — F12 (cosign identity) RESOLVED: the default identity in `bootstrap/images/verify-digests.sh` is now workflow-anchored (`^https://github\.com/meddleware-org/${name}/\.github/workflows/docker-publish\.yml@refs/tags/v`); all 16 deployed and contingency images verified valid against it (`STRICT=0 bash bootstrap/images/verify-digests.sh`), and the README `cosign verify` command is workflow-pinned (checked). F12 moves from MITIGATED to RESOLVED; nothing remains.
 - 2026-10-19 — dependency-bot status checked (read-only): `.github/dependabot.yml` carries the `ignore` rules and the repository has no open Dependabot pull requests (`gh pr list`, 2026-10-19). Versions, findings and gates were not re-examined in this pass.
   - Dependabot policy encoded in .github/dependabot.yml (majors declined); open PRs merged 2026-10-19
+  - `docker-publish.yml`: the private rebuild jobs are replaced by one `mirror-private` job that copies the published quay.io image (and its cosign artifacts) to the self-hosted registry by digest and fails unless the digest and the signature match (build once, promote by digest; committed locally, not yet released; the `PRIVATE_REGISTRY_*` credentials are still unset).
