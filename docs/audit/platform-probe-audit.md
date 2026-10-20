@@ -265,7 +265,7 @@ extra probe from reading the status). Coverage at 0.1.7: checks 93.0%, config 10
 
 ### F15 — The published `linux/arm64` image carried an x86-64 binary (found 2026-10-20)
 
-**Severity:** Low   **Disposition:** RESOLVED (0.1.8, commit pending)
+**Severity:** Low   **Disposition:** RESOLVED (0.1.8, commit d2ebc81)
 **Where:** `Dockerfile` (`ARG TARGETARCH=amd64`, the `go build` line); `.github/workflows/docker-publish.yml` (QEMU)
 **Issue:** the builder declared `ARG TARGETOS=linux` and `ARG TARGETARCH=amd64` and compiled with
 `GOARCH=${TARGETARCH}`. The default overrode the platform value BuildKit would have supplied, so the arm64 half of the
@@ -379,7 +379,7 @@ part of CI and of the release gate (F9).
 ### pre-mainnet
 
 - [x] no additional gate (testnet-independent service)
-- [x] each published platform's image holds that platform's binary, and the release builds without emulation — F15 (0.1.8: `FROM --platform=$BUILDPLATFORM`, no `TARGETARCH` default, the `go version -m` build step; commit pending)
+- [x] each published platform's image holds that platform's binary, and the release builds without emulation — F15 (0.1.8: `FROM --platform=$BUILDPLATFORM`, no `TARGETARCH` default, the `go version -m` build step; commit d2ebc81)
 - [ ] registry credential inventory and rotation (F13) — `OPERATOR_TASKS.md` "Image registry credentials"
 
 ## Cross-project themes
@@ -428,4 +428,4 @@ part of CI and of the release gate (F9).
 - 2026-10-19 — dependency-bot status checked (read-only): `.github/dependabot.yml` carries the `ignore` rules and the repository has no open Dependabot pull requests (`gh pr list`, 2026-10-19). Versions, findings and gates were not re-examined in this pass.
   - Dependabot policy encoded in .github/dependabot.yml (majors declined); open PRs merged 2026-10-19
   - `docker-publish.yml`: the private rebuild jobs are replaced by one `mirror-private` job that copies the published quay.io image (and its cosign artifacts) to the self-hosted registry by digest and fails unless the digest and the signature match (build once, promote by digest; committed locally, not yet released; the `PRIVATE_REGISTRY_*` credentials are still unset).
-- 2026-10-20 — image build moved off QEMU in 0.1.8 (commit pending): the builder stage is `FROM --platform=$BUILDPLATFORM` and cross-compiles with `GOOS=$TARGETOS GOARCH=$TARGETARCH` (no default for either; the `RUN` aborts if one is empty; a `go version -m` step asserts the binary's `GOARCH` equals the target); `docker-publish.yml` has no `docker/setup-qemu-action` step, so no privileged binfmt step runs in the release. Proof with rootless podman (builder pinned by digest, no binfmt handler registered): the amd64 image built from the 0.1.7 sources equals the published 0.1.7 in every file; the arm64 image differs by design (F15). New: F15 RESOLVED (the published arm64 image held an x86-64 binary; the cluster is amd64, so nothing deployed was affected). Checks: `go vet`, `go test -race` on go1.26.9, `scripts/check-image-notices.sh` with podman where the repo has it. No other disposition changed.
+- 2026-10-20 — image build moved off QEMU in 0.1.8 (commit d2ebc81): the builder stage is `FROM --platform=$BUILDPLATFORM` and cross-compiles with `GOOS=$TARGETOS GOARCH=$TARGETARCH` (no default for either; the `RUN` aborts if one is empty; a `go version -m` step asserts the binary's `GOARCH` equals the target); `docker-publish.yml` has no `docker/setup-qemu-action` step, so no privileged binfmt step runs in the release. Proof with rootless podman (builder pinned by digest, no binfmt handler registered): the amd64 image built from the 0.1.7 sources equals the published 0.1.7 in every file; the arm64 image differs by design (F15). New: F15 RESOLVED (the published arm64 image held an x86-64 binary; the cluster is amd64, so nothing deployed was affected). Checks: `go vet`, `go test -race` on go1.26.9, `scripts/check-image-notices.sh` with podman where the repo has it. No other disposition changed.
