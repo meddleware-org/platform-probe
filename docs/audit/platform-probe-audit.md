@@ -15,7 +15,7 @@ Not triggered: AUTH (no token or credential is issued, verified or held; the mou
 **Deployed by:** `k8s/base/apps/status/deployment.yaml` (namespace `apps`), overlay `k8s/clusters/meddleware-org/apps`; digest from `config/images.yaml`; probe targets from the SOPS-managed Secret `status-checks` (`status-checks-secret.enc.yaml`)
 **Build args:** `VERSION` (link-time version), `TARGETOS`, `TARGETARCH`, and the image-label strings `VENDOR`, `DESCRIPTION`, `SOURCE_URL`, `DOCUMENTATION_URL`, `IMAGE_URL` — none secret
 **Deployment status:** image `quay.io/meddleware-org/platform-probe` at 0.1.7 (`sha256:1ae74b67…7e2a`; release tag `v0.1.7` = `2f1ef48`; released, signature verified and deployed 2026-10-18; the rollout succeeded; 0.1.6 `sha256:c85c5485…` was deployed 2026-10-09) in `k8s/base/apps/status` (namespace `apps`); live `https://status.meddleware.co.uk/api/status` returns the topology-free snapshot (three groups including *Chain Access → Chain index*) with the security headers; after the 0.1.7 rollout the live snapshot read `overall: operational` with every component `operational` (re-read 2026-10-18), so the stricter 2xx default (F10) changed no component's state
-**Review date:** 2026-09-18 (first pass) · re-verified 2026-10-03 · re-verified 2026-10-09 · fix wave 2026-10-18 (0.1.7, commit `bb33f0b`)
+**Review date:** 2026-09-18 (first pass) · re-verified 2026-10-03 · re-verified 2026-10-09 · fix wave 2026-10-18 (0.1.7, commit `bb33f0b`) · image build 2026-10-20 (0.1.8)
 **Reviewer:** Internal review
 **Severity ceiling:** Low — public but topology-free: it probes internal endpoints on a timer and serves only names and coarse statuses.
 **Status:** fix wave 2026-10-18 (0.1.7, released and deployed 2026-10-18; signature verified; rollout succeeded)
@@ -59,6 +59,8 @@ Re-verified 2026-10-09 (0.1.6; `go vet` and `go test -race` green, coverage chec
 Fix wave 2026-10-18 (0.1.7: `go vet`, `go test -race` green, coverage checks 93.0%, config 100%, `cmd/server`
 33.8%; golangci-lint v2.13.0 and govulncheck v1.8.0 clean on the pinned 1.26.9 toolchain; image built with
 rootless podman and smoke-tested).
+
+Image build 2026-10-20 (0.1.8): the release no longer emulates arm64 (the builder cross-compiles on the build host; no QEMU step). The pass found **F15 (Low, RESOLVED)**: the published `linux/arm64` image carried the amd64 binary (a `TARGETARCH=amd64` default overrode the platform value); the cluster is amd64, so nothing deployed was affected.
 
 The severity ceiling stays Low. The live Secret is SOPS-encrypted and was not decrypted. The committed bootstrap
 definitions (`bootstrap/profiles/single-node.sh`, `recover-secrets.sh`) and `OPERATOR_TASKS.md` give every one of the
@@ -261,6 +263,26 @@ security headers, only the fields `generated_at`, `overall` and `groups`, no hos
 extra probe from reading the status). Coverage at 0.1.7: checks 93.0%, config 100%, `cmd/server` 33.8% (the rest is
 `main`'s wiring and shutdown).
 
+### F15 — The published `linux/arm64` image carried an x86-64 binary (found 2026-10-20)
+
+**Severity:** Low   **Disposition:** RESOLVED (0.1.8, commit pending)
+**Where:** `Dockerfile` (`ARG TARGETARCH=amd64`, the `go build` line); `.github/workflows/docker-publish.yml` (QEMU)
+**Issue:** the builder declared `ARG TARGETOS=linux` and `ARG TARGETARCH=amd64` and compiled with
+`GOARCH=${TARGETARCH}`. The default overrode the platform value BuildKit would have supplied, so the arm64 half of the
+multi-arch release (built under QEMU) compiled `GOARCH=amd64` too. Found 2026-10-20 while moving the build off QEMU:
+the `linux/arm64` image of the published 0.1.7 (`sha256:1ae74b67…7e2a`) holds `/platform-probe` with the same SHA-256 as the
+amd64 image (`96bf801a…`, ELF x86-64).
+**Impact:** the `linux/arm64` image would fail with an exec format error on an arm64 node. The cluster is amd64, so
+nothing deployed was affected; the signature, SBOM and scan all verified, because none of them runs the binary.
+**Remediation / evidence:** 0.1.8: the builder is `FROM --platform=$BUILDPLATFORM` and cross-compiles; `TARGETOS` and
+`TARGETARCH` have no default and the `RUN` aborts if either is empty; a build step asserts with `go version -m`
+(reads the binary without running it) that its `GOARCH` equals `${TARGETARCH}`, so a mismatched architecture fails the
+build on every platform (checked by hard-coding `GOARCH=amd64` and building `linux/arm64`: `is not built for arm64`);
+`setup-qemu-action` is removed from the release. Proof (rootless podman, no binfmt handler registered, so emulation was
+impossible): the amd64 image built from the 0.1.7 sources with `VERSION=v0.1.7` is byte-identical to the published
+amd64 image (every file); the arm64 image holds an ELF aarch64 binary (`2f534b11…`; `go version -m`: `GOARCH=arm64`,
+`GOOS=linux`, `CGO_ENABLED=0`, `-trimpath=true`) and the rest of its tree equals the published one.
+
 ## Section A — Invariant verification matrix
 
 | # | Invariant | Enforced at | Proven by | Status |
@@ -291,6 +313,7 @@ extra probe from reading the status). Coverage at 0.1.7: checks 93.0%, config 10
 | GO | Error handling | HOLDS — errors are checked (`errcheck` is in golangci-lint's defaults); responses carry no error text |
 | GO | CI | HOLDS (F9) — golangci-lint (default linters, no config file), vet, race tests with coverage, pinned `govulncheck`, Trivy filesystem scan |
 | IMG | Base images, build context, reproducible build, no secrets | HOLDS — builder digest-pinned and checked against the toolchain; `.dockerignore` excludes Markdown files, `.git`, `.github` and `.env*`; stdlib-only, `CGO_ENABLED=0`, `-trimpath`, version injected at link time; no secret in any `ARG`/`ENV`; only the binary and the CA bundle reach `scratch` |
+| IMG | Build host and emulation | HOLDS (0.1.8, F15) — the builder stage is `FROM --platform=$BUILDPLATFORM` and cross-compiles with `GOOS=$TARGETOS GOARCH=$TARGETARCH` (no default for either; the `RUN` aborts if one is empty; a `go version -m` step asserts the binary's `GOARCH` equals the target); `docker-publish.yml` has no `docker/setup-qemu-action` step, so no privileged binfmt step runs in the release; rootless podman build of both platforms with no binfmt handler: the amd64 image equals the published 0.1.7 in every file, the arm64 image holds an ELF aarch64 binary |
 | IMG | Runtime user & filesystem | HOLDS — `USER 65534:65534`; the pod sets `runAsNonRoot`, read-only root, no privilege escalation, all capabilities dropped, `RuntimeDefault` seccomp, `automountServiceAccountToken: false`, probes on `/healthz`, requests 5m/16Mi and limits 100m/48Mi; ingress is default-deny with allowances for nginx-ingress and monitoring; no egress policy (the probe must reach other namespaces, whose own policies admit it) |
 | IMG | Scan, SBOM and notices | HOLDS (F9) — Trivy on the published digest before cosign; SBOM attestation from the image; no third-party code is redistributed (standard library compiled in, as in static-server; the builder's CA bundle is the only copied file) |
 | IMG | Verification command | HOLDS — the README pins `docker-publish.yml@refs/tags/v*` and the workspace cluster check pins the same workflow and tag refs since 2026-10-18 (F12) |
@@ -356,6 +379,7 @@ part of CI and of the release gate (F9).
 ### pre-mainnet
 
 - [x] no additional gate (testnet-independent service)
+- [x] each published platform's image holds that platform's binary, and the release builds without emulation — F15 (0.1.8: `FROM --platform=$BUILDPLATFORM`, no `TARGETARCH` default, the `go version -m` build step; commit pending)
 - [ ] registry credential inventory and rotation (F13) — `OPERATOR_TASKS.md` "Image registry credentials"
 
 ## Cross-project themes
@@ -404,3 +428,4 @@ part of CI and of the release gate (F9).
 - 2026-10-19 — dependency-bot status checked (read-only): `.github/dependabot.yml` carries the `ignore` rules and the repository has no open Dependabot pull requests (`gh pr list`, 2026-10-19). Versions, findings and gates were not re-examined in this pass.
   - Dependabot policy encoded in .github/dependabot.yml (majors declined); open PRs merged 2026-10-19
   - `docker-publish.yml`: the private rebuild jobs are replaced by one `mirror-private` job that copies the published quay.io image (and its cosign artifacts) to the self-hosted registry by digest and fails unless the digest and the signature match (build once, promote by digest; committed locally, not yet released; the `PRIVATE_REGISTRY_*` credentials are still unset).
+- 2026-10-20 — image build moved off QEMU in 0.1.8 (commit pending): the builder stage is `FROM --platform=$BUILDPLATFORM` and cross-compiles with `GOOS=$TARGETOS GOARCH=$TARGETARCH` (no default for either; the `RUN` aborts if one is empty; a `go version -m` step asserts the binary's `GOARCH` equals the target); `docker-publish.yml` has no `docker/setup-qemu-action` step, so no privileged binfmt step runs in the release. Proof with rootless podman (builder pinned by digest, no binfmt handler registered): the amd64 image built from the 0.1.7 sources equals the published 0.1.7 in every file; the arm64 image differs by design (F15). New: F15 RESOLVED (the published arm64 image held an x86-64 binary; the cluster is amd64, so nothing deployed was affected). Checks: `go vet`, `go test -race` on go1.26.9, `scripts/check-image-notices.sh` with podman where the repo has it. No other disposition changed.
