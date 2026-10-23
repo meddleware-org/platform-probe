@@ -52,7 +52,7 @@ component order follow the order in the checks config file.
   `log/slog`, graceful shutdown, `envOr` for optional config, `cmd/server/main.go`
   thin (routing + wiring only); logic lives in `internal/`.
 - The binary is a pure API server — no embedded assets, no HTML. The status page
-  UI is the separate `status-page` Vue SPA (the satellite repo `repos/status-page`).
+  UI is the separate `status-ui` Vue SPA (the satellite repo `repos/status-ui`).
 
 ## What not to do
 

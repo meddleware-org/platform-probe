@@ -16,7 +16,7 @@ Prober goroutine (every PROBE_INTERVAL):
   rollup components → group, groups → overall
   store immutable Snapshot in an atomic cache
 
-Browser (status-page SPA):
+Browser (status-ui SPA):
   GET /api/status  → cached Snapshot (O(1); no probing on the request path)
   GET /healthz     → 200 liveness (independent of probed dependencies)
 ```

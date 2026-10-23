@@ -210,8 +210,8 @@ omitted field. After the 0.1.7 rollout the page was confirmed unchanged (2026-10
 **Severity:** Info   **Disposition:** RESOLVED (0.1.7, commit `bb33f0b`; documentation)
 **Where:** `internal/checks/checks.go` (package comment: "The internal probe URLs live here in code"),
 `llms.txt` ("Checks are defined in code (internal/checks/checks.go)" and "`GET /` — the embedded status
-page"), `README.md` ("endpoints stay in the binary"), `CLAUDE.md` (the status-page path
-`workspace/apps/status-page/`); the workspace's `k8s/clusters/meddleware-org/apps/kustomization.yaml` header
+page"), `README.md` ("endpoints stay in the binary"), `CLAUDE.md` (the status-ui path
+`workspace/apps/status-ui/`); the workspace's `k8s/clusters/meddleware-org/apps/kustomization.yaml` header
 still describes an embedded page (outside this repository)
 **Issue:** the code loads targets only from `CHECKS_CONFIG_FILE` and serves no page; these texts said the
 opposite. It is the same defect class as F1.
@@ -219,10 +219,10 @@ opposite. It is the same defect class as F1.
 invariant, and a contributor could reintroduce compiled-in targets in good faith.
 **Remediation / evidence:** the `checks.go` package comment, `llms.txt` (no `GET /`, the `CHECKS_CONFIG_FILE`
 variable and the runtime-loaded checks), the README (targets live in the mounted config) and `CLAUDE.md` (the
-`repos/status-page` repository) are corrected in 0.1.7; `AGENTS.md` and `CHANGELOG.md` entries added. Not
+`repos/status-ui` repository) are corrected in 0.1.7; `AGENTS.md` and `CHANGELOG.md` entries added. Not
 fixed here: the header comment of the workspace's `k8s/clusters/meddleware-org/apps/kustomization.yaml` ("served at
 GET / and GET /api/status. The page HTML is embedded in the binary, so there is no ConfigMap") is outside this
-repository and still says so; the workspace should reword it (the status page is the separate `status-page` image).
+repository and still says so; the workspace should reword it (the status page is the separate `status-ui` image).
 
 ### F12 — The published cosign command pins the repository, not the workflow
 

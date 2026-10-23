@@ -42,7 +42,7 @@
 - A check passes on its expect_status (exact); with no expect_status only a 2xx passes.
   Redirects are not followed. Point a check at an endpoint that exercises the whole
   dependency chain so a 200 proves more than reachability.
-- This is a JSON API only: the status page UI is the separate status-page SPA.
+- This is a JSON API only: the status page UI is the separate status-ui SPA.
 
 ## Security invariants
 

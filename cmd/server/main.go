@@ -1,7 +1,7 @@
 // Command server runs the platform-probe: a small service that probes the
 // platform's internal health endpoints server-side on a timer, caches an
 // aggregated, capability-grouped snapshot, and serves it as JSON. Browsers never
-// poll this service directly — they load the status-page SPA, which fetches the
+// poll this service directly — they load the status-ui SPA, which fetches the
 // snapshot every 15 s. Probe load is decoupled from visitor count and the internal
 // topology is never exposed.
 //
