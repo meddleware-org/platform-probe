@@ -3,7 +3,7 @@
 **Classification:** Internal security review
 **Project:** `repos/platform-probe` — Go standard-library status probe behind `status.meddleware.co.uk/api/status`
 **Project type:** Go service + image
-**Template:** AUDIT_TEMPLATE.md (2026-10-08) + AUDIT_TEMPLATE_GO.md (2026-10-08) + AUDIT_TEMPLATE_IMG.md (2026-10-08)
+**Template:** AUDIT_TEMPLATE.md (2026-11-01) + AUDIT_TEMPLATE_GO.md (2026-10-08) + AUDIT_TEMPLATE_IMG.md (2026-10-08)
 Not triggered: AUTH (no token or credential is issued, verified or held; the mounted Secret holds probe targets, not credentials), PLATFORM (the Secret's custody and the cluster are audited with the workspace), PROXY (it forwards nothing), SUI_CLIENT and the chain lenses (no chain access).
 **Go:** `go 1.26.6`, `toolchain go1.26.9` in `go.mod` (unchanged at 0.1.7); CI uses `go-version-file: go.mod`; the Dockerfile builder `golang:1.26.9-bookworm@sha256:d9c68c2c…453c` is checked against the `toolchain` line at build time
 **Modules:** none (standard library only; no `go.sum`)
