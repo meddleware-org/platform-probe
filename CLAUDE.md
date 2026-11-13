@@ -40,6 +40,62 @@ through the Cloudflare tunnel), so its output must never leak internal topology.
    the probed dependencies, so Kubernetes never restarts the pod because an
    upstream is down.
 
+## Flow and layout
+
+```text
+Prober goroutine (every PROBE_INTERVAL):
+  probe all checks concurrently (per-probe PROBE_TIMEOUT)
+    -> component status: condition met ? operational : down
+  rollup components -> group, groups -> overall
+  store an immutable Snapshot in an atomic cache
+Browser (status-ui SPA): GET /api/status (cached Snapshot) and GET /healthz (liveness)
+```
+
+```text
+cmd/server/main.go            HTTP server, routing, graceful shutdown, -healthcheck (used by the container HEALTHCHECK)
+internal/config/config.go     env config
+internal/checks/config.go     runtime checks config: JSON schema + LoadFile (validate, order)
+internal/checks/checks.go     prober (per-cycle reload), probe, aggregation, cache
+*_test.go                     rollup, order, JSON-has-no-URLs, probe (default 2xx, redirects refused), reload, fail-safe, config
+                              parse, security headers, CORS, the status handler body
+config.example.json           dummy example config (no real targets)
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PORT` | `8080` | HTTP listen port |
+| `PROBE_INTERVAL` | `15s` | Time between probe cycles (snapshot freshness) |
+| `PROBE_TIMEOUT` | `5s` | Per-probe timeout; must be `< PROBE_INTERVAL` |
+| `CHECKS_CONFIG_FILE` | `/etc/platform-probe/checks.json` | Checks file, reloaded each cycle |
+| `LOG_LEVEL` | `info` | `debug\|info\|warn\|error` |
+
+```bash
+go build ./... && go vet ./... && go test -race ./...
+PROBE_INTERVAL=15s PORT=8080 go run ./cmd/server
+curl -s localhost:8080/api/status | jq .
+docker build --build-arg VERSION=v0.1.0 -t quay.io/meddleware-org/platform-probe:v0.1.0 .
+```
+
+## Adding or changing a check
+
+Edit the runtime config (in the cluster, a SOPS-encrypted Secret), not the code. Each component:
+
+```json
+{ "name": "Registry API",
+  "url": "http://<service>.<namespace>.svc.cluster.local:<port>/<health-path>",
+  "expect_status": 200,
+  "expect_body_contains": "" }
+```
+
+- `expect_status` is the exact status required (100..599); omit it and only a `2xx` passes. Redirects are not followed, so a
+  `3xx` fails unless it is the expected code.
+- `name` and the enclosing group `name` are the only fields that reach clients; keep them capability-oriented (never a hostname).
+- Prefer a check that exercises a real dependency path (an endpoint that fans out to downstream services) over a shallow
+  liveness endpoint.
+- The service re-reads the file every probe cycle, so edits take effect live.
+- If the target is in another namespace, the status pod needs a NetworkPolicy ingress allowance there. The netpol ports and the
+  checks config must stay in sync; both live only in the private deployment repository, so neither leaks publicly.
+
 ## Aggregation
 
 `rollup`: all children operational → operational; all down → down; anything mixed
