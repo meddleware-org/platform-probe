@@ -59,6 +59,8 @@ internal/checks/checks.go     prober (per-cycle reload), probe, aggregation, cac
 *_test.go                     rollup, order, JSON-has-no-URLs, probe (default 2xx, redirects refused), reload, fail-safe, config
                               parse, security headers, CORS, the status handler body
 config.example.json           dummy example config (no real targets)
+.golangci.yml                 golangci-lint v2: the defaults plus revive's exported, package-comments and comment-spacings
+CONTRIBUTING.md               how to build, test and propose a change
 ```
 
 | Variable | Default | Description |
@@ -87,6 +89,7 @@ Edit the runtime config (in the cluster, a SOPS-encrypted Secret), not the code.
   "expect_body_contains": "" }
 ```
 
+- `url` must be an `http` or `https` address with a host; the error for one that is not names the component and never repeats the URL (it can carry a credential).
 - `expect_status` is the exact status required (100..599); omit it and only a `2xx` passes. Redirects are not followed, so a
   `3xx` fails unless it is the expected code.
 - `name` and the enclosing group `name` are the only fields that reach clients; keep them capability-oriented (never a hostname).

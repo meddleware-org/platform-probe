@@ -44,17 +44,21 @@ import (
 // -ldflags "-X main.version=...". It defaults to "dev" for local builds.
 var version = "dev"
 
+// main wires the service: the -healthcheck mode, validated configuration, the prober loop, the HTTP server and a graceful shutdown on SIGTERM or SIGINT.
 func main() {
+	// The container HEALTHCHECK runs this binary with -healthcheck: no configuration is loaded, it only dials the local /healthz.
 	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
 		os.Exit(healthCheck())
 	}
 
+	// Fail fast on a bad environment (an unparsable duration, a timeout not shorter than the interval) rather than run with a silent fallback.
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config error", "err", err)
 		os.Exit(1)
 	}
 
+	// Map LOG_LEVEL to the slog level; anything unrecognised stays at info.
 	level := slog.LevelInfo
 	switch cfg.LogLevel {
 	case "debug":
@@ -66,6 +70,7 @@ func main() {
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 
+	// The prober reads the checks file now and again every cycle; a missing file does not stop the service starting.
 	prober := checks.NewProber(cfg.ChecksConfigFile, cfg.ProbeTimeout)
 
 	// Run the prober for the lifetime of the process. Cancelling proberCtx on
@@ -74,6 +79,7 @@ func main() {
 	defer stopProber()
 	go prober.Start(proberCtx, cfg.ProbeInterval)
 
+	// Timeouts bound a slow client; the handler stack is request logging outermost, then the security headers, then the routes.
 	srv := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Port),
 		Handler:           logRequest(newHandler(handleStatus(prober))),
@@ -91,6 +97,7 @@ func main() {
 		}
 	}()
 
+	// Block until the cluster stops the pod, then stop the prober first so no new probes start while the server drains.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 	<-sig
@@ -125,6 +132,7 @@ func healthCheck() int {
 // newHandler routes the public endpoints and applies the security headers to every response,
 // including 404s and 405s from the mux.
 func newHandler(status http.HandlerFunc) http.Handler {
+	// Method-qualified patterns: anything else on these paths is a 405 from the mux, which the security headers still wrap.
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /api/status", withCORS(status))
@@ -187,11 +195,13 @@ type responseWriter struct {
 	code int
 }
 
+// WriteHeader records the status code before passing it on, so the request log can report it.
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.code = code
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+// logRequest logs one line per request at debug level: method, path (never the query string), status and elapsed time.
 func logRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rw := &responseWriter{ResponseWriter: w, code: http.StatusOK}

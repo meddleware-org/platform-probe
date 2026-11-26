@@ -1,3 +1,6 @@
+// Tests for the prober: status roll-up, snapshot aggregation, the HTTP probe (statuses, bodies, redirects), and loading and reloading the checks file
+// against httptest targets.
+
 package checks
 
 import (
@@ -14,12 +17,14 @@ import (
 	"time"
 )
 
+// TestRollup checks how child statuses reduce to a parent: all up, all down, mixed (degraded) and empty (unknown).
 func TestRollup(t *testing.T) {
 	tests := []struct {
 		name     string
 		children []Status
 		want     Status
 	}{
+		// A table of child-status sets and the parent status each must produce.
 		{"all operational", []Status{StatusOperational, StatusOperational}, StatusOperational},
 		{"all down", []Status{StatusDown, StatusDown}, StatusDown},
 		{"mixed is degraded", []Status{StatusOperational, StatusDown}, StatusDegraded},
@@ -36,8 +41,10 @@ func TestRollup(t *testing.T) {
 	}
 }
 
+// TestAggregatePreservesOrderAndGroups checks the snapshot keeps the order of groups and of components within a group, and rolls statuses up.
 func TestAggregatePreservesOrderAndGroups(t *testing.T) {
 	checks := []Check{
+		// Three checks in two groups, interleaved, to prove grouping keeps first-seen order.
 		{Group: "A", Name: "a1"},
 		{Group: "B", Name: "b1"},
 		{Group: "A", Name: "a2"},
@@ -63,6 +70,7 @@ func TestAggregatePreservesOrderAndGroups(t *testing.T) {
 	}
 }
 
+// TestSnapshotJSONHasNoURLs checks the serialised snapshot carries no part of a probe URL: the public API discloses health, not topology.
 func TestSnapshotJSONHasNoURLs(t *testing.T) {
 	checks := []Check{
 		{Group: "Container Registry", Name: "Registry API", URL: "http://secret-internal:8181/v2/_catalog"},
@@ -78,6 +86,7 @@ func TestSnapshotJSONHasNoURLs(t *testing.T) {
 	}
 }
 
+// contains reports whether needle occurs in haystack (a local helper, so the test reads without importing strings for one call).
 func contains(haystack, needle string) bool {
 	for i := 0; i+len(needle) <= len(haystack); i++ {
 		if haystack[i:i+len(needle)] == needle {
@@ -87,7 +96,9 @@ func contains(haystack, needle string) bool {
 	return false
 }
 
+// TestProbe checks a single probe: status match, status mismatch, body match, body mismatch and an unreachable target (down, never a panic).
 func TestProbe(t *testing.T) {
+	// Two local targets: one healthy, with a JSON body, and one that always answers 502.
 	okSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"repositories":[]}`))
@@ -98,6 +109,7 @@ func TestProbe(t *testing.T) {
 	}))
 	defer badSrv.Close()
 
+	// A hand-built prober (no config file): only the probe method is under test here.
 	p := &Prober{timeout: 2 * time.Second, client: &http.Client{}}
 	ctx := context.Background()
 
@@ -155,6 +167,7 @@ func TestProbeWithoutExpectStatusAcceptsOnly2xx(t *testing.T) {
 	}
 }
 
+// TestProbeExplicitExpectStatusIsExact checks an expected code is exact: a 204 does not satisfy an expected 200 even though it is a 2xx.
 func TestProbeExplicitExpectStatusIsExact(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -215,6 +228,7 @@ func writeConfig(t *testing.T, dir, url string) string {
 	return path
 }
 
+// TestNewProberSeedsFromConfig checks the prober starts with an all-unknown snapshot that already names the configured groups.
 func TestNewProberSeedsFromConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := writeConfig(t, dir, "http://127.0.0.1:1/x")
@@ -228,6 +242,7 @@ func TestNewProberSeedsFromConfig(t *testing.T) {
 	}
 }
 
+// TestNewProberMissingConfigStillStarts checks a missing checks file never crashes the service or yields a nil snapshot.
 func TestNewProberMissingConfigStillStarts(t *testing.T) {
 	p := NewProber(filepath.Join(t.TempDir(), "absent.json"), time.Second)
 	if p.Snapshot() == nil {
@@ -243,6 +258,7 @@ func TestNewProberMissingConfigStillStarts(t *testing.T) {
 	}
 }
 
+// TestRunOnceReloadsConfigDynamically checks an edit to the mounted file takes effect on the next cycle without a restart.
 func TestRunOnceReloadsConfigDynamically(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -271,6 +287,7 @@ func TestRunOnceReloadsConfigDynamically(t *testing.T) {
 	}
 }
 
+// TestReloadKeepsLastGoodOnBadEdit checks a corrupted file leaves the last good checks in place rather than blanking the page.
 func TestReloadKeepsLastGoodOnBadEdit(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

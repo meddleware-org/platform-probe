@@ -22,6 +22,7 @@ import (
 // Status is a component/group/overall health state.
 type Status string
 
+// The four health states. A component is operational or down; a group or the whole is degraded when its children are mixed; unknown only before the first cycle.
 const (
 	// StatusOperational means every underlying check passed.
 	StatusOperational Status = "operational"

@@ -5,6 +5,14 @@ All notable changes to platform-probe are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The checks file is validated more strictly: a component whose `url` is not an `http` or `https` address with a host is refused when the file is read (the last good set keeps running), instead of
+  reading `down` for ever. The error names the component and never repeats the URL.
+- Line-level comments on every file; `CONTRIBUTING.md` and a `.golangci.yml` with revive's documentation rules added; no other behaviour change.
+
 ## [0.1.11] - 2026-11-19
 
 ### Security

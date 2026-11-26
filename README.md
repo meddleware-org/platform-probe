@@ -94,9 +94,10 @@ here are the dummy `example.com` entries in [config.example.json](config.example
 }
 ```
 
-Each component takes `name`, `url`, `expect_status`, and optional
+Each component takes `name`, `url` (an `http` or `https` address with a host), `expect_status`, and optional
 `expect_body_contains`. Group and component order is preserved on the page. A config
-that fails to parse is ignored — the last good set keeps running.
+that fails to parse or validate is ignored — the last good set keeps running. The error names the component, never
+its URL, because a configured URL can carry a credential.
 
 `expect_status` is the exact HTTP status the target must answer (it must be 100–599).
 Redirects are not followed, so a `3xx` is a failure unless it is the expected status.
@@ -131,7 +132,7 @@ fails if they are empty (the legacy builder does not set them).
 
 ## Contributing / development
 
-See [AGENTS.md](AGENTS.md) for the package layout and how to add a check, and
-[CLAUDE.md](CLAUDE.md) for the architectural invariants. CI runs `golangci-lint`,
+See [CONTRIBUTING.md](CONTRIBUTING.md) to build, test and propose a change, and
+[CLAUDE.md](CLAUDE.md) for the package layout, how to add a check and the architectural invariants. CI runs `golangci-lint`,
 `go vet`, race tests, `govulncheck`, and a Trivy scan; a `v*` tag triggers a signed
 multi-registry release.

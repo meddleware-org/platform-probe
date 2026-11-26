@@ -4,6 +4,8 @@
 **Project:** `repos/platform-probe` — Go standard-library status probe behind `status.meddleware.co.uk/api/status`
 **Project type:** Go service + image
 **Template:** AUDIT_TEMPLATE.md (2026-11-01) + AUDIT_TEMPLATE_GO.md (2026-10-08) + AUDIT_TEMPLATE_IMG.md (2026-10-08)
+  - **Added 2026-11-26 (Part B documentation pass):** AUDIT_TEMPLATE_DOCS.md (2026-11-20); AUDIT_TEMPLATE_RFC.md (2026-11-19), ●: HTTP, JSON, timestamps, caching; AUDIT_TEMPLATE_IOP.md (2026-11-19), ●: the status JSON as the contract, the build and release
+    dependencies; AUDIT_TEMPLATE_PRIV.md (2026-11-20), ●: nothing stored, one debug log line; AUDIT_TEMPLATE_CONF.md (2026-11-26), ●: five environment variables and the mounted checks file.
 Not triggered: AUTH (no token or credential is issued, verified or held; the mounted Secret holds probe targets, not credentials), PLATFORM (the Secret's custody and the cluster are audited with the workspace), PROXY (it forwards nothing), SUI_CLIENT and the chain lenses (no chain access).
 **Go:** `go 1.26.6`, `toolchain go1.26.9` in `go.mod` (unchanged at 0.1.7); CI uses `go-version-file: go.mod`; the Dockerfile builder `golang:1.26.9-bookworm@sha256:d9c68c2c…453c` is checked against the `toolchain` line at build time
 **Modules:** none (standard library only; no `go.sum`)
@@ -298,6 +300,63 @@ amd64 image (every file); the arm64 image holds an ELF aarch64 binary (`2f534b11
 **Remediation / evidence:** 0.1.9 bumps the toolchain to Go 1.26.10 (`go.mod`, the Dockerfile builder digest; the Dockerfile fails if the builder's Go differs from the `go.mod` toolchain). The gate was not weakened and no ignore entry was added. Proof: the `Publish (Docker)` run for `v0.1.9` succeeded, including the scan before signing (read with `gh`, 2026-10-22).
 Related: registry-auth-proxy F24 (the same advisory, reachable there), static-server F13.
 
+### Part B documentation pass (2026-11-26)
+
+Scope: every tracked file read against the workspace's `docs/operations/DOCUMENTATION_STANDARD.md` and annotated (Part B Phase 1, the twenty-second repository, the second of the Go services); the DOCS, RFC, IOP, PRIV and CONF
+lenses applied for the first time. Before and after editing: `go vet`, `go test -race` (21 tests; 93.1 % checks, 100 % config, 33.8 % `cmd/server`) and `golangci-lint` 2.15.0 (0 issues, with the new revive rules). The only
+code change is F17 (and its tests); everything else is comments, documents and configuration comments.
+
+#### B.RFC-1 Standards inventory
+
+| Standard | Where | Evidence |
+| --- | --- | --- |
+| HTTP semantics, RFC 9110: GET, OPTIONS, `405` from the method-qualified mux patterns | `newHandler` | `TestHandlerSecurityHeaders` (the 405 and 404 carry the headers) |
+| Caching, RFC 9111: `Cache-Control: no-store` on the snapshot | `handleStatus` | `TestHandleStatusServesTheCachedSnapshot` |
+| JSON, RFC 8259, and timestamps, RFC 3339 (`generated_at` is Go's `time.Time` JSON form) | `Snapshot`, `encoding/json` | the same test decodes the body |
+| CORS (the WHATWG Fetch standard): `Access-Control-Allow-Origin: *`, methods and headers on GET and the OPTIONS preflight | `withCORS` | `TestStatusKeepsCORS` |
+| CSP, `X-Content-Type-Options`, `X-Frame-Options`, Referrer Policy, CORP (W3C and WHATWG) for a JSON-only API | `withSecurityHeaders` | the header test |
+
+**B.RFC-2 Non-final standards:** none. **B.RFC-3 Deviations:** none found.
+
+#### B.IOP Interoperability, portability and exit
+
+- **Portability and exit:** the service holds no person's data; leaving is pointing the status page at any service that serves the same documented JSON.
+- **Open API:** `GET /api/status` (the snapshot shape is in the README), `GET /healthz`; the checks file format is documented and its validation is tested; no special access for our own client (status-ui reads the same endpoint).
+- **Dependencies (exit register):** the `golang` builder image, quay.io, Docker Hub, the self-hosted registry, GitHub Actions, Sigstore and Trivy; all replaceable by a rebuild from source. Nothing is called at run time except the
+  operator's own probe targets.
+- **Incentives:** no telemetry, no ads, no tracking.
+
+#### B.PRIV Privacy honoured
+
+- **Browser storage:** none (a JSON API; no cookie is set).
+- **Logs:** at the default `info` level the service logs start and stop only; at `debug` one line per request with the method, path (without the query string), status and elapsed time, and one line per failed probe naming the
+  component (never its URL or the error). No address, user agent or header is logged.
+- **Data held:** none about a person; the mounted checks file lists internal targets and is a SOPS-encrypted Secret in the cluster.
+
+#### B.CONF Configuration and values
+
+- **Configuration surface:** `config.Load` (five environment variables, one typed `Config`) and the mounted checks file (`LoadFile`); both documented in the README and `CLAUDE.md`.
+- **Values that can carry a credential:** each component `url` in the checks file.
+- **Echo sweep (2026-11-26):** every error and log call read. `LoadFile` errors quote the file path (not a credential) and, after F17, name components rather than URLs; probe failures log the component name only; the duration
+  errors quote the interval and timeout the operator typed (a duration, not a credential).
+- **Validation:** the environment is parsed once at start-up with errors that name the variable; the checks file is validated on every read, now including the URL (F17).
+
+### F17 — A component URL was never validated, so an unusable one read "down" for ever with no explanation
+**Severity:** Low   **Disposition:** RESOLVED (2026-11-26, unreleased)
+**Where:** `internal/checks/config.go` `LoadFile`.
+**Issue:** `LoadFile` checked that a component had a URL but not that it was one: a value with no scheme, a scheme other than `http` or `https`, or no host was accepted, failed at probe time without a log line at the default level, and the
+component showed `down` for ever.
+**Impact:** an operator's typo looked like an outage; there was no message pointing at the file.
+**Remediation / evidence:** the URL must parse, be `http` or `https` and have a host, or the file is refused (the last good set keeps running, as for any bad edit). The message names the component and group and never the URL,
+because a configured URL can carry a user name, password or key (CONF lens): `TestLoadFileErrors` gains four cases and `TestLoadFileBadURLNeverEchoed` asserts no part of a URL with credentials, a path token and a query key
+appears. Every URL in the live configuration (checked in `k8s/scripts/add-status-checks.sh` and the workspace) is `http` or `https`.
+
+### F18 — Documentation drift found by the documentation pass
+**Severity:** Low   **Disposition:** RESOLVED (2026-11-26, unreleased)
+**Where:** `README.md` (the development section sent readers to `AGENTS.md` for the layout, but `AGENTS.md` is a pointer to `CLAUDE.md`), `CHANGELOG.md` (no `Unreleased` section), the tests (five files with no header and
+ten undocumented tests), the workflows, `.dockerignore` and `dependabot.yml` (few or no comments); there was no `CONTRIBUTING.md` and no lint that checks doc comments.
+**Remediation / evidence:** the documents and comments are written; `.golangci.yml` turns on revive's `exported`, `package-comments` and `comment-spacings`; `check-docs` for the repository passes.
+
 ## Section A — Invariant verification matrix
 
 | # | Invariant | Enforced at | Proven by | Status |
@@ -326,7 +385,7 @@ Related: registry-auth-proxy F24 (the same advisory, reachable there), static-se
 | GO | Graceful shutdown | HOLDS — SIGTERM/SIGINT stop the prober and call `Server.Shutdown` with a 10 s deadline |
 | GO | Health & version endpoints | HOLDS — `/healthz` is `{"status":"ok"}`, independent of the probes; there is no `/version` (the build version is logged at start) |
 | GO | Error handling | HOLDS — errors are checked (`errcheck` is in golangci-lint's defaults); responses carry no error text |
-| GO | CI | HOLDS (F9) — golangci-lint (default linters, no config file), vet, race tests with coverage, pinned `govulncheck`, Trivy filesystem scan |
+| GO | CI | HOLDS (F9) — golangci-lint (the default linters plus revive's documentation rules in `.golangci.yml` since 2026-11-26), vet, race tests with coverage, pinned `govulncheck`, Trivy filesystem scan |
 | IMG | Base images, build context, reproducible build, no secrets | HOLDS — builder digest-pinned and checked against the toolchain; `.dockerignore` excludes Markdown files, `.git`, `.github` and `.env*`; stdlib-only, `CGO_ENABLED=0`, `-trimpath`, version injected at link time; no secret in any `ARG`/`ENV`; only the binary and the CA bundle reach `scratch` |
 | IMG | Build host and emulation | HOLDS (0.1.8, F15) — the builder stage is `FROM --platform=$BUILDPLATFORM` and cross-compiles with `GOOS=$TARGETOS GOARCH=$TARGETARCH` (no default for either; the `RUN` aborts if one is empty; a `go version -m` step asserts the binary's `GOARCH` equals the target); `docker-publish.yml` has no `docker/setup-qemu-action` step, so no privileged binfmt step runs in the release; rootless podman build of both platforms with no binfmt handler: the amd64 image equals the published 0.1.7 in every file, the arm64 image holds an ELF aarch64 binary |
 | IMG | Runtime user & filesystem | HOLDS — `USER 65534:65534`; the pod sets `runAsNonRoot`, read-only root, no privilege escalation, all capabilities dropped, `RuntimeDefault` seccomp, `automountServiceAccountToken: false`, probes on `/healthz`, requests 5m/16Mi and limits 100m/48Mi; ingress is default-deny with allowances for nginx-ingress and monitoring; no egress policy (the probe must reach other namespaces, whose own policies admit it) |
@@ -361,7 +420,7 @@ build mode exists; no job spends real funds.
 
 ## Section C — Test-coverage & hermetic/live split
 
-### C.1 Coverage grade — A− (checks 93.0%, config 100%, `cmd/server` 33.8%, 2026-10-18)
+### C.1 Coverage grade — A− (checks 93.1%, config 100%, `cmd/server` 33.8%, 21 tests; 2026-11-26)
 
 Tests: rollup and aggregation order, the snapshot JSON has no URLs, `probe` against OK/502/body-match/
 unreachable servers, config load and reload (valid, errors, missing file, last-good kept), duration
@@ -447,3 +506,6 @@ part of CI and of the release gate (F9).
 - 2026-10-22 (audit close-out) — F16 added (RESOLVED): Trivy flags the Go 1.26.9 standard library (CVE-2026-111943, HIGH, fixed in 1.26.10) in the published binary, although govulncheck found it unreachable; the scan-before-sign gate would block the release. Resolved by the Go 1.26.10 bump in 0.1.9 (`v0.1.9` = `0b3d701`, `Publish (Docker)` run 39764402603 succeeded). Counts: one more RESOLVED (16 findings). Not re-run here: the Go tests and the scans.
 - 2026-11-05 — delta review against the code since the 2026-10-22 close-out (`9cfaf32`): the ADR-0003 rename (comments, `llms.txt`, `AGENTS.md`, the user-visible name `status-ui`), release 0.1.10 (a CHANGELOG entry, no code change) and the Dependabot Actions bump (`docker/login-action` 4.6.0 → 4.7.0, `oras-project/setup-oras` 2.0.1 → 2.0.2; both stay pinned by commit SHA with a version comment, and the bump changed no `permissions` or trigger). Ran `go vet ./...` and `go test -race -count=1 ./...` (all three packages pass) and `govulncheck v1.8.0 ./...` (no vulnerabilities; run on the local Go 1.27.3 standard library, the module has no third-party dependency — the 1.26.10 standard library is covered by the CI scan-before-sign gate, F16). No finding changed, no new finding; no source file under `cmd/` or `internal/` other than a comment line changed. Lens check: the A11Y lens (2026-11-01) is not triggered — the service renders nothing for people (its consumer, `status-ui`, carries it). Base and Go dates re-cited to the 2026-11-01 registry, which changes no row used here (the base registry gained the A11Y code; the Go lens is unchanged). Pin: `config/images.yaml` names 0.1.10; the live digest is compared at the next deploy.
 - 2026-11-07 — mainnet-readiness sweep, local re-check (no code change): `govulncheck ./...` (rebuilt with Go 1.27.3 so it matches the toolchain) reports no vulnerabilities, and `golangci-lint run ./...` (2.15.0, the repository's configuration) reports 0 issues. This closes the "not run locally" rows for the Go checks. No finding changed.
+- 2026-11-26 — Part B documentation pass and first application of the DOCS, RFC, IOP, PRIV and CONF lenses (above, "Part B documentation pass"). Baseline before editing: `go vet`, `go test -race` (21 tests). Every tracked file annotated
+  to the documentation standard; `CONTRIBUTING.md` and `.golangci.yml` added; README and CLAUDE.md corrected. Found and fixed **F17** (the component URL was not validated) and **F18** (documentation drift). Re-run after editing:
+  `go vet`, `go test -race` (21 tests), golangci-lint 2.15.0 (0 issues). Counts: F1 to F18.

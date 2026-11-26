@@ -1,3 +1,5 @@
+// Tests for Load: the defaults, and the refusal of durations that are unparsable, non-positive or that let a cycle outlast its interval.
+
 package config
 
 import (
@@ -24,6 +26,7 @@ func TestLoadDefaults(t *testing.T) {
 // TestLoadRejectsBadDurations verifies that unparsable, non-positive and overrunning
 // durations are refused, so a probe cycle can never outlast its interval.
 func TestLoadRejectsBadDurations(t *testing.T) {
+	// Each row: an interval, a timeout and the text the error must contain.
 	cases := []struct{ interval, timeout, want string }{
 		{"soon", "1s", "PROBE_INTERVAL"},
 		{"-1s", "1s", "PROBE_INTERVAL must be positive"},

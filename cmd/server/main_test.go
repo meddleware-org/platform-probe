@@ -1,3 +1,6 @@
+// Tests for the status service's HTTP layer: the security and CORS headers on every route, and the cached snapshot served through the real
+// handler stack over httptest targets (no mocks of the prober).
+
 package main
 
 import (
@@ -15,11 +18,13 @@ import (
 	"github.com/meddleware-org/platform-probe/internal/checks"
 )
 
+// TestHandlerSecurityHeaders checks every response (200, 204, 404 and 405 alike) carries the five JSON-API security headers.
 func TestHandlerSecurityHeaders(t *testing.T) {
 	h := newHandler(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
 	})
+	// The exact header values the handler must set on every response.
 	want := map[string]string{
 		"Content-Security-Policy":      "default-src 'none'; frame-ancestors 'none'",
 		"X-Content-Type-Options":       "nosniff",
@@ -27,6 +32,7 @@ func TestHandlerSecurityHeaders(t *testing.T) {
 		"Referrer-Policy":              "no-referrer",
 		"Cross-Origin-Resource-Policy": "cross-origin",
 	}
+	// Each route and method, with the status it must answer: the headers must be present on all of them.
 	cases := []struct {
 		method, path string
 		code         int
@@ -51,6 +57,7 @@ func TestHandlerSecurityHeaders(t *testing.T) {
 	}
 }
 
+// TestStatusKeepsCORS checks the cross-origin headers survive the security headers on both GET and the OPTIONS preflight, because the status widget on other hosts reads this endpoint.
 func TestStatusKeepsCORS(t *testing.T) {
 	h := newHandler(func(w http.ResponseWriter, _ *http.Request) {})
 	for _, m := range []string{http.MethodGet, http.MethodOptions} {
@@ -78,6 +85,7 @@ func TestHandleStatusServesTheCachedSnapshot(t *testing.T) {
 	}))
 	defer target.Close()
 
+	// A real checks file with one healthy component and one that answers 503 and sets no expected status.
 	cfgPath := filepath.Join(t.TempDir(), "checks.json")
 	cfg := `{"groups":[{"name":"Group A","components":[` +
 		`{"name":"Good","url":"` + target.URL + `/good","expect_status":200},` +
@@ -100,6 +108,7 @@ func TestHandleStatusServesTheCachedSnapshot(t *testing.T) {
 	}
 
 	prober.RunOnce(context.Background())
+	// One probe cycle has run; count the target's hits so the loop below can prove a request never probes.
 	hitsAfterCycle := hits.Load()
 
 	// Reading the status must never probe: serve it several times and compare.
@@ -143,6 +152,7 @@ func TestHandleStatusServesTheCachedSnapshot(t *testing.T) {
 		t.Errorf("components = %+v, want Good operational and Omitted down (a 503 without expect_status)", got)
 	}
 
+	// Decode the body generically to prove only the three documented top-level fields exist.
 	// Topology-free: the body names only groups, components and statuses.
 	var generic map[string]json.RawMessage
 	if err := json.Unmarshal(rec.Body.Bytes(), &generic); err != nil {
