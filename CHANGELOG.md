@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-11-27
+
 ### Changed
 
 - The checks file is validated more strictly: a component whose `url` is not an `http` or `https` address with a host is refused when the file is read (the last good set keeps running), instead of
