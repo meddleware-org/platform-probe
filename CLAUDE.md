@@ -113,6 +113,10 @@ component order follow the order in the checks config file.
 - The binary is a pure API server — no embedded assets, no HTML. The status page
   UI is the separate `status-ui` Vue SPA (the satellite repo `repos/status-ui`).
 
+## Documentation rules (workspace documentation standard, D144)
+
+Every file has a header and every identifier a doc comment that starts with its name (the `revive` rules in `.golangci.yml` enforce the exported ones in CI); line comments say why. `node scripts/check-docs.mjs --report platform-probe` (in the workspace repository) is the gate. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## What not to do
 
 - Do not add write endpoints or accept client input beyond simple GETs.
